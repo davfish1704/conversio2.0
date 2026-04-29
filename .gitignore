@@ -1,0 +1,14 @@
+node_modules/
+.env.local
+.env.*.local
+.next/
+*.log
+dist/
+coverage/
+.env
+.vercel
+.env*.local
+.kimi/
+skills/
+*.backup
+*.backup2
