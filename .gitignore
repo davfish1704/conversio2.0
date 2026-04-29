@@ -12,3 +12,4 @@ coverage/
 skills/
 *.backup
 *.backup2
+.env.local
