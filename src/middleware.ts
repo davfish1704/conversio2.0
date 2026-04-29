@@ -6,7 +6,7 @@ export async function middleware(req: NextRequest) {
   const { nextUrl } = req
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   const isLoggedIn = !!token
-  
+
   const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth")
   const isPublicRoute = nextUrl.pathname === "/" || nextUrl.pathname.startsWith("/login") || nextUrl.pathname.startsWith("/signup")
   const isPublicApi = nextUrl.pathname === "/api/health" || nextUrl.pathname.startsWith("/api/webhook")
@@ -19,7 +19,7 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!isLoggedIn && !isPublicRoute && !isApiAuthRoute && !isPublicApi) {
-    return NextResponse.redirect(new URL("/login", nextUrl))
+    return NextResponse.redirect(new URL("/login", req.url))
   }
 
   return NextResponse.next()
