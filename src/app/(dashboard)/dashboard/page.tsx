@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, useContext } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -12,6 +12,7 @@ import {
   ArrowLeft, Kanban, Users, ChevronRight
 } from "lucide-react"
 import { useTheme } from "@/lib/ThemeContext"
+import { LanguageContext } from "@/lib/LanguageContext"
 
 interface Board {
   id: string
@@ -48,6 +49,7 @@ function DashboardContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const boardId = searchParams.get("board")
+  const { t } = useContext(LanguageContext)
   const { theme } = useTheme()
   const tooltipStyle = theme === "dark"
     ? { borderRadius: "8px", border: "1px solid #374151", backgroundColor: "#1f2937", color: "#f9fafb", fontSize: "12px" }
@@ -154,7 +156,7 @@ function DashboardContent() {
       setNewBoardDesc("")
     } else {
       const data = await res.json().catch(() => ({}))
-      setFormError(data.error || "Board konnte nicht erstellt werden")
+      setFormError(data.error || t('dashboard.boardCreateError'))
     }
   }
 
@@ -182,7 +184,7 @@ function DashboardContent() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedBoard.name}</h1>
               <p className="text-gray-500 dark:text-gray-400 text-sm">
-                {boardStats?.totalLeads ?? 0} Leads · {boardStats?.activeLeads ?? 0} aktiv
+                {boardStats?.totalLeads ?? 0} Leads · {boardStats?.activeLeads ?? 0} {t('dashboard.boardsActive')}
               </p>
             </div>
           </div>
@@ -199,29 +201,29 @@ function DashboardContent() {
         {boardStats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Leads gesamt</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.totalLeads')}</p>
               <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{boardStats.totalLeads}</p>
               <div className="flex items-center gap-1 mt-2 text-xs text-emerald-600">
                 <TrendingUp className="w-3 h-3" />
-                <span>+{boardStats.newThisWeek} diese Woche</span>
+                <span>+{boardStats.newThisWeek} {t('dashboard.thisWeek')}</span>
               </div>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Aktiv</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.activeLeads')}</p>
               <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{boardStats.activeLeads}</p>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                {boardStats.totalLeads > 0 ? Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100) : 0}% von gesamt
+                {boardStats.totalLeads > 0 ? Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100) : 0}{t('dashboard.ofTotal')}
               </p>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
               <p className="text-sm text-gray-500 dark:text-gray-400">States</p>
               <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{selectedBoard._count?.states || 0}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Pipeline-Stufen</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{t('dashboard.pipelineStages')}</p>
             </div>
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
               <p className="text-sm text-gray-500 dark:text-gray-400">Members</p>
               <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{selectedBoard._count?.members || 0}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Teammitglieder</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{t('dashboard.teamMembers')}</p>
             </div>
           </div>
         )}
@@ -233,7 +235,7 @@ function DashboardContent() {
             <div className="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
                 <BarChart3 className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Lead-Volumen (30 Tage)</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.leadVolume')}</h2>
               </div>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -258,7 +260,7 @@ function DashboardContent() {
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-6 shadow-sm transition-colors">
               <div className="flex items-center gap-2 mb-6">
                 <PieIcon className="w-5 h-5 text-violet-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Nach Kanal</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.byChannel')}</h2>
               </div>
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
@@ -279,7 +281,7 @@ function DashboardContent() {
             <div className="lg:col-span-3 bg-white dark:bg-gray-900 rounded-xl transition-colors border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
                 <BarChart3 className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Status-Übersicht</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.statusOverview')}</h2>
               </div>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
@@ -313,14 +315,14 @@ function DashboardContent() {
             <LayoutDashboard className="w-6 h-6 text-blue-600" />
             Dashboard
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">{boards.length} Boards · {boards.filter(b => b.isActive).length} aktiv</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">{boards.length} Boards · {boards.filter(b => b.isActive).length} {t('dashboard.boardsActive')}</p>
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition shadow-sm"
         >
           <Plus className="w-4 h-4" />
-          Neues Board
+          {t('dashboard.newBoard')}
         </button>
       </div>
 
@@ -330,15 +332,15 @@ function DashboardContent() {
           <div className="w-16 h-16 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
             <LayoutDashboard className="w-8 h-8 text-gray-400" />
           </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Noch keine Boards erstellt</h3>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">{t('dashboard.noBoardsTitle')}</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-            Erstelle dein erstes Board, um Leads zu verwalten und deine Pipeline aufzubauen.
+            {t('dashboard.noBoardsDesc')}
           </p>
           <button
             onClick={() => setIsModalOpen(true)}
             className="mt-4 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition"
           >
-            Erstes Board erstellen
+            {t('dashboard.createFirstBoard')}
           </button>
         </div>
       ) : (
@@ -360,7 +362,7 @@ function DashboardContent() {
                       : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
                   }`}
                 >
-                  {board.isActive ? "Aktiv" : "Inaktiv"}
+                  {board.isActive ? t('dashboard.active') : t('dashboard.inactive')}
                 </span>
               </div>
 
@@ -386,7 +388,7 @@ function DashboardContent() {
               </div>
 
               <div className="mt-4 flex items-center text-sm text-blue-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                Details anzeigen <ChevronRight className="w-4 h-4 ml-1" />
+                {t('dashboard.viewDetails')} <ChevronRight className="w-4 h-4 ml-1" />
               </div>
             </div>
           ))}
@@ -397,30 +399,30 @@ function DashboardContent() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 p-6 rounded-xl transition-colors w-full max-w-md mx-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Neues Board erstellen</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.createBoardTitle')}</h2>
             <form onSubmit={createBoard} className="mt-4 space-y-4">
               {formError && (
                 <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{formError}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('dashboard.boardName')}</label>
                 <input
                   type="text"
                   value={newBoardName}
                   onChange={(e) => setNewBoardName(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
                   required
-                  placeholder="z.B. Versicherungsvertrieb"
+                  placeholder={t('dashboard.boardNamePlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Beschreibung</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('dashboard.boardDescription')}</label>
                 <textarea
                   value={newBoardDesc}
                   onChange={(e) => setNewBoardDesc(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
                   rows={3}
-                  placeholder="Optional"
+                  placeholder={t('dashboard.descriptionOptional')}
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
@@ -429,14 +431,14 @@ function DashboardContent() {
                   onClick={() => { setIsModalOpen(false); setFormError("") }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
-                  Abbrechen
+                  {t('dashboard.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={formLoading}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {formLoading ? "Erstellen..." : "Erstellen"}
+                  {formLoading ? t('dashboard.creating') : t('dashboard.create')}
                 </button>
               </div>
             </form>

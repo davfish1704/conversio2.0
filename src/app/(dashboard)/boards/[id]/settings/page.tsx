@@ -65,10 +65,10 @@ export default function BoardSettingsPage() {
     try {
       const res = await fetch(`/api/boards/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Delete failed")
-      toast({ title: "Board gelöscht" })
+      toast({ title: "Board deleted" })
       router.push("/dashboard")
     } catch {
-      toast({ title: "Fehler beim Löschen", variant: "destructive" })
+      toast({ title: "Failed to delete board", variant: "destructive" })
       setDeleting(false)
     }
   }

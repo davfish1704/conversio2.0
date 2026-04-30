@@ -113,7 +113,7 @@ export default function BoardPipelinePage() {
             </button>
             <button
               disabled
-              title="Lead manuell hinzufügen – demnächst verfügbar"
+              title="Add lead manually – coming soon"
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg opacity-50 cursor-not-allowed"
             >
               + {t("common.addLead")}

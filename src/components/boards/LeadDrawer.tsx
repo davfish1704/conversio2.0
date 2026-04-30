@@ -149,11 +149,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
             messages: [
               {
                 role: "system",
-                content: "Du bist ein freundlicher Versicherungsmakler. Schreibe kurze, professionelle WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze.",
+                content: t('leadDrawer.aiSystemPrompt'),
               },
               {
                 role: "user",
-                content: `Erstelle eine passende Antwort für ${lead.customerName || "den Kunden"}. Letzte Nachricht: ${messages[messages.length - 1]?.content || "Neuer Kontakt"}`,
+                content: `${t('leadDrawer.aiUserPromptPrefix')} ${lead.customerName || t('leadDrawer.customer')}. ${t('leadDrawer.lastMessageLabel')}: ${messages[messages.length - 1]?.content || t('leadDrawer.newContact')}`,
               },
             ],
           },
@@ -269,14 +269,14 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               ) : messages.length === 0 ? (
                 <div className="text-center py-12 text-gray-400">
                   <div className="text-4xl mb-2">💬</div>
-                  <p className="text-sm">Noch keine Nachrichten</p>
-                  <p className="text-xs mt-1">Starte die Konversation oder generiere eine KI-Begrüßung</p>
+                  <p className="text-sm">{t('leadDrawer.noMessages')}</p>
+                  <p className="text-xs mt-1">{t('leadDrawer.startOrGenerate')}</p>
                   {aiEnabled && !isFrozen && (
                     <button
                       onClick={generateAiSuggestion}
                       className="mt-4 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm hover:bg-purple-200 transition-colors"
                     >
-                      ✨ KI-Begrüßung generieren
+                      ✨ {t('leadDrawer.generateGreeting')}
                     </button>
                   )}
                 </div>
@@ -292,9 +292,9 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                         msg.direction === "OUTBOUND" ? "text-right" : "text-left"
                       }`}>
                         {msg.direction === "OUTBOUND" ? (
-                          msg.aiGenerated ? <span className="text-purple-500">✨ KI</span> : "Du"
+                          msg.aiGenerated ? <span className="text-purple-500">✨ AI</span> : t('leadDrawer.you')
                         ) : (
-                          lead.customerName || "Kunde"
+                          lead.customerName || t('leadDrawer.customer')
                         )}
                       </div>
                       
@@ -335,20 +335,20 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                         onClick={() => sendMessage(aiSuggestion, true)}
                         className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors font-medium"
                       >
-                        Übernehmen & Senden
+                        {t('leadDrawer.acceptAndSend')}
                       </button>
                       <button
                         onClick={() => setAiSuggestion("")}
                         className="px-4 py-2 bg-white text-gray-600 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                       >
-                        Ignorieren
+                        {t('leadDrawer.dismiss')}
                       </button>
                       <button
                         onClick={generateAiSuggestion}
                         disabled={isGenerating}
                         className="px-4 py-2 bg-white text-purple-600 text-sm rounded-lg border border-purple-200 hover:bg-purple-50 transition-colors disabled:opacity-50"
                       >
-                        {isGenerating ? "..." : "Neu generieren"}
+                        {isGenerating ? "..." : t('leadDrawer.regenerate')}
                       </button>
                     </div>
                   </div>
@@ -365,7 +365,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage(newMessage)}
-                    placeholder="Nachricht schreiben..."
+                    placeholder={t('leadDrawer.messagePlaceholder')}
                     className="flex-1 px-4 py-3 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                   <button
@@ -373,7 +373,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                     disabled={!newMessage.trim()}
                     className="px-5 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Senden
+                    {t('leadDrawer.send')}
                   </button>
                 </div>
                 <div className="flex gap-2 mt-2">
@@ -384,7 +384,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
                     >
                       <span>✨</span>
-                      {isGenerating ? "Generiere..." : "KI-Vorschlag"}
+                      {isGenerating ? t('leadDrawer.generating') : t('leadDrawer.aiSuggestion')}
                     </button>
                   )}
                 </div>
@@ -392,7 +392,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
             ) : (
               <div className="p-4 border-t border-gray-100 bg-blue-50 shrink-0">
                 <p className="text-sm text-blue-700 text-center font-medium">
-                  ❄️ Dieser Chat ist eingefroren. Manuelle Übernahme aktiv.
+                  ❄️ {t('leadDrawer.frozenMessage')}
                 </p>
               </div>
             )}
@@ -405,11 +405,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               {/* Contact */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                  Kontakt
+                  {t('leadDrawer.contact')}
                 </h4>
                 <div className="space-y-2.5">
                   <div>
-                    <p className="text-xs text-gray-400">Telefon</p>
+                    <p className="text-xs text-gray-400">{t('leadDrawer.phone')}</p>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.customerPhone}</p>
                   </div>
                   <div>
@@ -417,11 +417,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.customerName || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Quelle</p>
+                    <p className="text-xs text-gray-400">{t('leadDrawer.source')}</p>
                     <p className="text-sm text-gray-700 dark:text-gray-300">{lead.source || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Kanal</p>
+                    <p className="text-xs text-gray-400">{t('leadDrawer.channel')}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <ChannelIcon channel={lead.channel || "whatsapp"} />
                     </div>
@@ -436,7 +436,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                 </h4>
                 <div className="space-y-2.5">
                   <div>
-                    <p className="text-xs text-gray-400">Aktueller State</p>
+                    <p className="text-xs text-gray-400">{t('leadDrawer.currentState')}</p>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {states.find((s) => s.id === lead.currentStateId)?.name || "—"}
                     </p>
@@ -454,7 +454,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Erstellt</p>
+                    <p className="text-xs text-gray-400">{t('leadDrawer.createdAt')}</p>
                     <p className="text-sm text-gray-700">
                       {new Date(lead.createdAt).toLocaleDateString(locale)}
                     </p>
@@ -481,11 +481,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               {/* Notes */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                  Notizen
+                  {t('leadDrawer.notes')}
                 </h4>
                 <textarea
                   defaultValue={String(lead.notes || "")}
-                  placeholder="Notizen hinzufügen..."
+                  placeholder={t('leadDrawer.notesPlaceholder')}
                   className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:text-white"
                   rows={4}
                 />
@@ -495,7 +495,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               {fieldDefinitions.length > 0 && (
                 <div>
                   <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    Zusätzliche Felder
+                    {t('leadDrawer.additionalFields')}
                   </h4>
                   <div className="space-y-3">
                     {fieldDefinitions.map((field) => (

@@ -439,11 +439,11 @@ export default function PageBuilder() {
           </button>
           <button
             disabled
-            title="Veröffentlichen – demnächst verfügbar"
+            title="Publish – coming soon"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg opacity-50 cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
-            Veröffentlichen
+            Publish
           </button>
         </div>
       </div>
