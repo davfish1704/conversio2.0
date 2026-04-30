@@ -31,7 +31,7 @@ function LoginForm() {
     <div className="max-w-md w-full space-y-6 bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-lg">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Conversio Login</h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">Anmelden, um fortzufahren</p>
+        <p className="mt-2 text-gray-600 dark:text-gray-400">{t('auth.signInToContinue')}</p>
       </div>
 
       {urlError && (
@@ -41,8 +41,8 @@ function LoginForm() {
             : urlError === 'CredentialsSignin'
             ? t('auth.invalidEmailPassword')
             : urlError === 'AccessDenied'
-            ? 'Ein Konto mit dieser E-Mail-Adresse existiert bereits. Bitte melde dich mit E-Mail und Passwort an.'
-            : 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.'}
+            ? t('auth.alreadyLinked')
+            : t('auth.genericError')}
         </div>
       )}
 
@@ -68,7 +68,7 @@ function LoginForm() {
             d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
           />
         </svg>
-        Mit Google anmelden
+        {t('auth.continueWithGoogle')}
       </button>
 
       <div className="relative">
@@ -76,14 +76,14 @@ function LoginForm() {
           <div className="w-full border-t border-gray-300 dark:border-gray-700" />
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">oder</span>
+          <span className="px-2 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">{t('auth.or')}</span>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            E-Mail-Adresse
+            {t('auth.email')}
           </label>
           <input
             id="email"
@@ -92,13 +92,13 @@ function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"
-            placeholder="ihre@email.de"
+            placeholder={t('auth.emailPlaceholder')}
           />
         </div>
 
         <div>
           <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Passwort
+            {t('auth.password')}
           </label>
           <input
             id="password"
@@ -115,22 +115,22 @@ function LoginForm() {
           disabled={loading}
           className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
         >
-          {loading ? 'Anmelden...' : t('auth.signIn')}
+          {loading ? t('auth.signingIn') : t('auth.signIn')}
         </button>
       </form>
 
       <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-        Passwort vergessen?{' '}
-        <a href="mailto:info@trsales.net?subject=Passwort%20zur%C3%BCcksetzen" className="font-medium text-blue-600 hover:text-blue-500">
-          Support kontaktieren
+        {t('auth.forgotPassword')}{' '}
+        <a href="mailto:info@attrsales.net?subject=Password%20Reset" className="font-medium text-blue-600 hover:text-blue-500">
+          {t('auth.contactSupport')}
         </a>
       </p>
 
       {FEATURES.publicSignup && (
         <p className="text-center text-sm text-gray-600 dark:text-gray-400">
-          Noch kein Konto?{' '}
+          {t('auth.noAccount')}{' '}
           <Link href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
-            Jetzt registrieren
+            {t('auth.registerNow')}
           </Link>
         </p>
       )}
