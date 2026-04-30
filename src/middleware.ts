@@ -12,13 +12,18 @@ export async function middleware(req: NextRequest) {
   const isPublicApi = nextUrl.pathname === "/api/health" || nextUrl.pathname.startsWith("/api/webhook")
   const isApiRoute = nextUrl.pathname.startsWith("/api")
 
-  if (isApiRoute && !isApiAuthRoute && !isPublicApi) {
+  // Auth callbacks IMMER durchlassen
+  if (isApiAuthRoute) {
+    return NextResponse.next()
+  }
+
+  if (isApiRoute && !isPublicApi) {
     if (!isLoggedIn) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
   }
 
-  if (!isLoggedIn && !isPublicRoute && !isApiAuthRoute && !isPublicApi) {
+  if (!isLoggedIn && !isPublicRoute && !isPublicApi) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
