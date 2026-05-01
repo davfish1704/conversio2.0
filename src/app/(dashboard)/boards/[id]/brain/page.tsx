@@ -14,6 +14,7 @@ interface BrainData {
   stylePrompt: string | null
   infoPrompt: string | null
   rulePrompt: string | null
+  channelSwitchTemplate: string | null
 }
 
 interface BrainDocument {
@@ -55,6 +56,7 @@ export default function BrainLabPage() {
     stylePrompt: "",
     infoPrompt: "",
     rulePrompt: "",
+    channelSwitchTemplate: "",
   })
 
   // Documents State
@@ -293,7 +295,7 @@ export default function BrainLabPage() {
           <div className="space-y-6 max-w-3xl">
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Prompt</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Defines the AI's core personality and role</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Defines the AI&apos;s core personality and role</p>
               <textarea
                 value={brainData.systemPrompt || ""}
                 onChange={(e) => setBrainData({ ...brainData, systemPrompt: e.target.value })}
@@ -336,6 +338,24 @@ export default function BrainLabPage() {
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                 placeholder="- Never give guarantees&#10;- No medical advice&#10;- Always refer to a human agent when..."
+              />
+            </div>
+
+            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Channel-Switch Template</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                Vorlage für die Nachricht, die beim Channel-Wechsel gesendet wird.
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                Verfügbare Variablen: <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">{"{channel}"}</code>{" "}
+                <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">{"{link}"}</code>
+              </p>
+              <textarea
+                value={brainData.channelSwitchTemplate || ""}
+                onChange={(e) => setBrainData({ ...brainData, channelSwitchTemplate: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder="Du kannst diese Unterhaltung auch auf {channel} weiterführen: {link}"
               />
             </div>
 

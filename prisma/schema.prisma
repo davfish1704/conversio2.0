@@ -215,6 +215,7 @@ model State {
   maxFollowups            Int       @default(3)
   followupAction          String    @default("escalate")
   followupTargetState     String?
+  allowChannelSwitch      Boolean   @default(true)
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 

@@ -210,6 +210,7 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
                 escalateOnNoReply: editingState.escalateOnNoReply ?? null,
                 maxFollowups: editingState.maxFollowups ?? 3,
                 followupAction: editingState.followupAction || "escalate",
+                allowChannelSwitch: (editingState as any).allowChannelSwitch ?? true,
               }
             : undefined
         }

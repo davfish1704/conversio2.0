@@ -5,6 +5,35 @@ import { type Lead } from "./LeadCard"
 import { getInitials, getAvatarColor, formatRelativeTime } from "@/lib/utils/formatting"
 import { LanguageContext } from "@/lib/LanguageContext"
 import TelegramInviteUI from "@/components/leads/TelegramInviteUI"
+import ChannelInviteUI from "@/components/leads/ChannelInviteUI"
+
+interface ConversationItem {
+  id: string
+  channel: string
+  externalId: string | null
+  status: string
+  lastMessageAt: string
+}
+
+interface BoardChannelOption {
+  id: string
+  platform: string
+  status: string
+}
+
+interface PendingInvite {
+  id: string
+  token: string
+  targetChannelId: string
+  expiresAt: string
+}
+
+interface InviteData {
+  token: string
+  deepLink: string
+  qrUrl: string
+  expiresAt: string
+}
 
 interface Message {
   id: string
@@ -88,15 +117,31 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
   const [showHistory, setShowHistory] = useState(false)
   const [fieldDefinitions, setFieldDefinitions] = useState<FieldDefinition[]>([])
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
+  const [notesValue, setNotesValue] = useState("")
+  const [conversations, setConversations] = useState<ConversationItem[]>([])
+  const [boardChannels, setBoardChannels] = useState<BoardChannelOption[]>([])
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([])
+  const [showChannelDropdown, setShowChannelDropdown] = useState(false)
+  const [channelModalOpen, setChannelModalOpen] = useState(false)
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
+  const [inviteData, setInviteData] = useState<InviteData | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { t, language } = useContext(LanguageContext)
 
   useEffect(() => {
     if (lead) {
       setIsFrozen(lead.frozen || false)
-      setAiEnabled(lead.aiEnabled !== false)
+      setAiEnabled((lead as any).aiEnabled !== false)
+      setNotesValue(String((lead.customData as any)?.notes ?? lead.notes ?? ""))
+      setInviteData(null)
+      setChannelModalOpen(false)
+      setSelectedChannelId(null)
       loadMessages()
       loadFieldDefinitions()
+      loadConversations()
+      loadBoardChannels()
+      loadPendingInvites()
     }
   }, [lead])
 
@@ -108,7 +153,9 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
     if (!lead) return
     setIsLoading(true)
     try {
-      const res = await fetch(`/api/conversations/${lead.id}/messages`)
+      // Nutze conversationId wenn vorhanden (Lead-basierte API), sonst lead.id als Fallback
+      const convId = (lead as any).conversationId || lead.id
+      const res = await fetch(`/api/conversations/${convId}/messages`)
       if (!res.ok) throw new Error("Failed to load messages")
       const data = await res.json()
       setMessages(data.messages || [])
@@ -128,19 +175,91 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       setFieldDefinitions(data.fields || [])
       const leadAny = lead as unknown as Record<string, unknown>
       setCustomFields(
-        (leadAny.customData as Record<string, unknown>) ||
-        (leadAny.customFields as Record<string, unknown>) ||
-        {}
+        (leadAny.customData as Record<string, unknown>) || {}
       )
     } catch (err) {
       console.error("Field definitions fetch error:", err)
     }
   }, [boardId, lead])
 
+  const loadConversations = useCallback(async () => {
+    if (!lead) return
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/conversations`)
+      if (!res.ok) return
+      const data = await res.json()
+      setConversations(data.conversations || [])
+    } catch { /* silent */ }
+  }, [lead])
+
+  const loadBoardChannels = useCallback(async () => {
+    if (!boardId) return
+    try {
+      const res = await fetch(`/api/boards/${boardId}/channels`)
+      if (!res.ok) return
+      const data = await res.json()
+      setBoardChannels((data.channels || []).filter((c: BoardChannelOption) => c.status === "connected"))
+    } catch { /* silent */ }
+  }, [boardId])
+
+  const loadPendingInvites = useCallback(async () => {
+    if (!lead) return
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/invites`)
+      if (!res.ok) return
+      const data = await res.json()
+      setPendingInvites(data.invites || [])
+    } catch { /* silent */ }
+  }, [lead])
+
+  const handleAddChannel = (channelId: string) => {
+    setSelectedChannelId(channelId)
+    setChannelModalOpen(true)
+    setInviteData(null)
+    setShowChannelDropdown(false)
+  }
+
+  const createInvite = async (sendNow: boolean) => {
+    if (!lead || !selectedChannelId) return
+    setInviteLoading(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/invite-channel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetChannelId: selectedChannelId, sendNow }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || "Fehler beim Erstellen der Einladung")
+        return
+      }
+      const data = await res.json()
+      setInviteData({ token: data.token, deepLink: data.deepLink, qrUrl: data.qrUrl, expiresAt: data.expiresAt })
+      loadPendingInvites()
+    } catch {
+      alert("Netzwerkfehler")
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const saveNotes = useCallback(async (value: string) => {
+    if (!lead) return
+    const convId = (lead as any).conversationId || lead.id
+    try {
+      await fetch(`/api/conversations/${convId}/fields`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customData: { notes: value } }),
+      })
+    } catch { /* silent */ }
+  }, [lead])
+
   const saveCustomField = useCallback(async (key: string, value: unknown) => {
     if (!lead) return
     try {
-      await fetch(`/api/conversations/${lead.id}/fields`, {
+      const convId = (lead as any).conversationId || lead.id
+      await fetch(`/api/conversations/${convId}/fields`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customData: { [key]: value } }),
@@ -164,7 +283,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       }
       setMessages((prev) => [...prev, tempMessage])
 
-      const res = await fetch(`/api/conversations/${lead.id}/messages`, {
+      const convId = (lead as any).conversationId || lead.id
+      const res = await fetch(`/api/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -209,7 +329,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               },
               {
                 role: "user",
-                content: `${t('leadDrawer.aiUserPromptPrefix')} ${lead.customerName || t('leadDrawer.customer')}. ${t('leadDrawer.lastMessageLabel')}: ${messages[messages.length - 1]?.content || t('leadDrawer.newContact')}`,
+                content: `${t('leadDrawer.aiUserPromptPrefix')} ${lead.name || t('leadDrawer.customer')}. ${t('leadDrawer.lastMessageLabel')}: ${messages[messages.length - 1]?.content || t('leadDrawer.newContact')}`,
               },
             ],
           },
@@ -229,7 +349,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
   const toggleFreeze = async () => {
     if (!lead) return
     try {
-      const res = await fetch(`/api/conversations/${lead.id}/freeze`, {
+      const convId = (lead as any).conversationId || lead.id
+      const res = await fetch(`/api/conversations/${convId}/freeze`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ frozen: !isFrozen, reason: "Manual freeze" }),
@@ -250,7 +371,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
   if (!lead) return null
 
-  const needsTelegramInvite = lead.channel === "telegram" && !(lead as unknown as Record<string, unknown>).externalId
+  const needsTelegramInvite = lead.channel === "telegram" && !(lead as any).externalId && !(lead as any).conversationId
 
   const locale = language === "de" ? "de-DE" : "en-US"
 
@@ -263,15 +384,15 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
         <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm ${getAvatarColor(lead.id)}`}>
-              {getInitials(lead.customerName || lead.customerPhone)}
+              {getInitials(lead.name || lead.phone || "")}
             </div>
             <div>
               <h3 className="font-semibold text-gray-900 dark:text-white text-lg">
-                {lead.customerName || lead.customerPhone}
+                {lead.name || lead.phone}
               </h3>
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <ChannelIcon channel={lead.channel || "whatsapp"} />
-                <span>{lead.customerPhone}</span>
+                <span>{lead.phone}</span>
                 <span>·</span>
                 <span>{formatRelativeTime(lead.lastMessageAt, language)}</span>
               </div>
@@ -356,7 +477,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                         {msg.direction === "OUTBOUND" ? (
                           msg.aiGenerated ? <span className="text-purple-500">✨ AI</span> : t('leadDrawer.you')
                         ) : (
-                          lead.customerName || t('leadDrawer.customer')
+                          lead.name || t('leadDrawer.customer')
                         )}
                       </div>
                       
@@ -473,11 +594,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                 <div className="space-y-2.5">
                   <div>
                     <p className="text-xs text-gray-400">{t('leadDrawer.phone')}</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.customerPhone}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.phone || "—"}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-400">Name</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.customerName || "—"}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.name || "—"}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-400">{t('leadDrawer.source')}</p>
@@ -541,13 +662,89 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                 </div>
               )}
 
+              {/* Channels */}
+              <div>
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Channels
+                </h4>
+                <div className="space-y-1.5 mb-2">
+                  {conversations.length === 0 ? (
+                    <p className="text-xs text-gray-400">Keine aktiven Channels</p>
+                  ) : (
+                    conversations.map((conv) => (
+                      <div key={conv.id} className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                        <ChannelIcon channel={conv.channel} />
+                        <span className="truncate">{conv.externalId || conv.id.slice(0, 8)}</span>
+                        {conv.status !== "ACTIVE" && (
+                          <span className="text-gray-400">({conv.status})</span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Pending invites */}
+                {pendingInvites.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {pendingInvites.map((inv) => {
+                      const ch = boardChannels.find((b) => b.id === inv.targetChannelId)
+                      const days = Math.max(0, Math.ceil((new Date(inv.expiresAt).getTime() - Date.now()) / 86400000))
+                      return (
+                        <div key={inv.id} className="flex items-center gap-2 text-xs">
+                          <ChannelIcon channel={ch?.platform || "manual"} />
+                          <span className="px-1.5 py-0.5 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 rounded border border-yellow-200 dark:border-yellow-800">
+                            Pending — noch {days}d
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Add channel dropdown */}
+                {boardChannels.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowChannelDropdown((v) => !v)}
+                      className="w-full text-xs px-3 py-1.5 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                    >
+                      + Channel hinzufügen
+                    </button>
+                    {showChannelDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setShowChannelDropdown(false)} />
+                        <div className="absolute left-0 top-8 z-20 w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg py-1">
+                          {boardChannels
+                            .filter((bc) => !conversations.some((c) => c.channel === bc.platform))
+                            .map((bc) => (
+                              <button
+                                key={bc.id}
+                                onClick={() => handleAddChannel(bc.id)}
+                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                              >
+                                <ChannelIcon channel={bc.platform} />
+                                <span>{bc.platform === "telegram" ? "Telegram" : bc.platform === "whatsapp" ? "WhatsApp" : bc.platform}</span>
+                              </button>
+                            ))}
+                          {boardChannels.filter((bc) => !conversations.some((c) => c.channel === bc.platform)).length === 0 && (
+                            <p className="px-3 py-2 text-xs text-gray-400">Alle Channels bereits verknüpft</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Notes */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('leadDrawer.notes')}
                 </h4>
                 <textarea
-                  defaultValue={String(lead.notes || "")}
+                  value={notesValue}
+                  onChange={(e) => setNotesValue(e.target.value)}
+                  onBlur={(e) => saveNotes(e.target.value)}
                   placeholder={t('leadDrawer.notesPlaceholder')}
                   className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:text-white"
                   rows={4}
@@ -723,6 +920,51 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
           </div>
         </div>
       </div>
+      {/* Channel invite modal */}
+      {channelModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Channel-Einladung</h3>
+              <button
+                onClick={() => { setChannelModalOpen(false); setInviteData(null) }}
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {!inviteData ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Wie soll die Einladung übermittelt werden?
+                </p>
+                <button
+                  onClick={() => createInvite(true)}
+                  disabled={inviteLoading}
+                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {inviteLoading ? "Wird erstellt…" : "Jetzt senden"}
+                </button>
+                <button
+                  onClick={() => createInvite(false)}
+                  disabled={inviteLoading}
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                >
+                  {inviteLoading ? "Wird erstellt…" : "Nur Link generieren"}
+                </button>
+              </div>
+            ) : (
+              <ChannelInviteUI
+                invite={inviteData}
+                channel={boardChannels.find((b) => b.id === selectedChannelId)?.platform || "telegram"}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

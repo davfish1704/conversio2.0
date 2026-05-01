@@ -21,6 +21,7 @@ export interface StateFormData {
   escalateOnNoReply: number | null
   maxFollowups: number
   followupAction: string
+  allowChannelSwitch: boolean
 }
 
 interface StateOption {
@@ -94,6 +95,7 @@ export default function StateForm({
     escalateOnNoReply: null,
     maxFollowups: 3,
     followupAction: "escalate",
+    allowChannelSwitch: true,
   })
   const { t } = useContext(LanguageContext)
 
@@ -111,6 +113,7 @@ export default function StateForm({
         escalateOnNoReply: initialData.escalateOnNoReply ?? null,
         maxFollowups: initialData.maxFollowups ?? 3,
         followupAction: initialData.followupAction || "escalate",
+        allowChannelSwitch: initialData.allowChannelSwitch ?? true,
       })
     } else {
       setForm({
@@ -130,6 +133,7 @@ export default function StateForm({
         escalateOnNoReply: null,
         maxFollowups: 3,
         followupAction: "escalate",
+        allowChannelSwitch: true,
       })
     }
   }, [initialData, isOpen, states.length])
@@ -404,6 +408,22 @@ export default function StateForm({
                       />
                     </div>
                   )}
+                </div>
+
+                {/* Channel Switch */}
+                <div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={form.allowChannelSwitch}
+                      onChange={(e) => setForm({ ...form, allowChannelSwitch: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    Channel-Switch erlaubt
+                  </label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 ml-6 mt-0.5">
+                    Lead kann in diesem State auf einen anderen Channel wechseln
+                  </p>
                 </div>
 
                 {/* Max Followups + Action */}
