@@ -6,7 +6,8 @@ import { auth } from "@/auth"
 /**
  * PATCH /api/conversations/[id]/fields
  * Update custom fields for a conversation
- * Body: { customFields: Record<string, any>, fieldHistory?: Array }
+ * Body: { customFields?: Record<string, any>, customData?: Record<string, any>, fieldHistory?: Array }
+ * Saves to both customFields (legacy) and customData (new dynamic fields)
  */
 
 export async function PATCH(
@@ -20,10 +21,12 @@ export async function PATCH(
 
   try {
     const body = await req.json()
-    const { customFields, fieldHistory } = body
+    const { customFields, customData } = body
 
-    if (!customFields || typeof customFields !== "object") {
-      return NextResponse.json({ error: "customFields object is required" }, { status: 400 })
+    const fieldsToUpdate = customFields || customData
+
+    if (!fieldsToUpdate || typeof fieldsToUpdate !== "object") {
+      return NextResponse.json({ error: "customFields or customData object is required" }, { status: 400 })
     }
 
     // findFirst mit Board-Membership-Check — kombiniert Ownership-Prüfung + Datenabruf
@@ -38,23 +41,26 @@ export async function PATCH(
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
     }
 
-    // Merge with existing custom fields
-    const existingFields = (conversation.customFields as Record<string, any> | null) || {}
-    const mergedFields = { ...existingFields, ...customFields }
+    // Merge with existing fields
+    const existingCustomFields = (conversation.customFields as Record<string, unknown> | null) || {}
+    const existingCustomData = (conversation.customData as Record<string, unknown> | null) || {}
+
+    const mergedCustomFields = { ...existingCustomFields, ...fieldsToUpdate }
+    const mergedCustomData = { ...existingCustomData, ...fieldsToUpdate }
 
     // Track field changes for audit
     const changes: Array<{
       field: string
-      oldValue: any
-      newValue: any
+      oldValue: unknown
+      newValue: unknown
       timestamp: string
     }> = []
 
-    for (const [key, value] of Object.entries(customFields)) {
-      if (existingFields[key] !== value) {
+    for (const [key, value] of Object.entries(fieldsToUpdate)) {
+      if (existingCustomData[key] !== value) {
         changes.push({
           field: key,
-          oldValue: existingFields[key],
+          oldValue: existingCustomData[key],
           newValue: value,
           timestamp: new Date().toISOString(),
         })
@@ -64,7 +70,8 @@ export async function PATCH(
     const updatedConversation = await prisma.conversation.update({
       where: { id: params.id },
       data: {
-        customFields: mergedFields,
+        customFields: mergedCustomFields,
+        customData: mergedCustomData,
       },
       include: {
         currentState: true,
@@ -76,7 +83,7 @@ export async function PATCH(
       changes,
     })
   } catch (error) {
-    console.error("❌ Fields update error:", error)
+    console.error("Fields update error:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

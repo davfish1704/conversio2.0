@@ -6,25 +6,34 @@ export async function GET() {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  // Direkte Abfrage: Hat der User ein Team mit WhatsApp Accounts?
-  const teamMember = await prisma.teamMember.findFirst({
+  const member = await prisma.teamMember.findFirst({
     where: { userId: session.user.id },
-    include: { 
-      team: { include: { whatsappAccounts: true } }
-    }
+    select: { teamId: true },
   })
 
-  const whatsappAccount = teamMember?.team?.whatsappAccounts?.[0]
-  const hasWhatsApp = whatsappAccount?.status === "ACTIVE"
+  let hasWhatsApp = false
+  if (member) {
+    const boards = await prisma.board.findMany({
+      where: { teamId: member.teamId },
+      select: { id: true },
+    })
+    const boardIds = boards.map(b => b.id)
+    if (boardIds.length) {
+      const waChannel = await prisma.boardChannel.findFirst({
+        where: { boardId: { in: boardIds }, platform: "whatsapp", status: "connected" },
+      })
+      hasWhatsApp = !!waChannel
+    }
+  }
 
-  const integrations = [
+  return NextResponse.json([
     {
       id: "whatsapp",
       name: "WhatsApp Business",
       description: "Connect your WhatsApp Business API",
       icon: "💬",
       connected: hasWhatsApp,
-      color: "bg-green-100 text-green-700"
+      color: "bg-green-100 text-green-700",
     },
     {
       id: "gcalendar",
@@ -32,9 +41,7 @@ export async function GET() {
       description: "Sync appointments and meetings",
       icon: "📅",
       connected: false,
-      color: "bg-blue-100 text-blue-700"
-    }
-  ]
-
-  return NextResponse.json(integrations)
+      color: "bg-blue-100 text-blue-700",
+    },
+  ])
 }

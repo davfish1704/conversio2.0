@@ -179,6 +179,7 @@ export const translations = {
       deleting: "Deleting...",
       import: "Import",
       addLead: "Add Lead",
+      leads: "Leads",
     },
     dashboard: {
       title: "Dashboard",
@@ -393,6 +394,7 @@ export const translations = {
       deleteWarning: "Once deleted, this board and all its data cannot be recovered.",
     },
     assets: {
+      title: "Assets",
       mediaManager: "Media Manager",
       boardMemory: "The board's memory - manage assets and knowledge",
       addNewAsset: "Add New Asset",
@@ -694,6 +696,7 @@ export const translations = {
       deleting: "Löschen...",
       import: "Importieren",
       addLead: "Lead hinzufügen",
+      leads: "Leads",
     },
     dashboard: {
       title: "Dashboard",
@@ -908,6 +911,7 @@ export const translations = {
       deleteWarning: "Einmal gelöscht, können dieses Board und alle seine Daten nicht wiederhergestellt werden.",
     },
     assets: {
+      title: "Vorlagen",
       mediaManager: "Media Manager",
       boardMemory: "Das Gedächtnis des Boards - Assets und Wissen verwalten",
       addNewAsset: "Neues Asset hinzufügen",

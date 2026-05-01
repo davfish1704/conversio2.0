@@ -84,7 +84,7 @@ model WhatsAppAccount {
 
 model Conversation {
   id             String             @id @default(cuid())
-  waAccountId    String
+  waAccountId    String?
   boardId        String?
   currentStateId String?
   customerPhone  String
@@ -102,11 +102,18 @@ model Conversation {
   frozenReason   String?
   frozenBy       String?
   aiEnabled      Boolean        @default(true)
+  followupCount         Int       @default(0)
+  conversationSummary   String?
+  summaryUpdatedAt      DateTime?
+  messageCountSinceSum  Int       @default(0)
   aiModel        String?        @default("llama-3.1-8b-instant")
   channel        String         @default("whatsapp")
+  externalId     String?
+  customData     Json           @default("{}")
+  collectedFields Json          @default("[]")
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @default(now()) @updatedAt
-  waAccount      WhatsAppAccount    @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  waAccount      WhatsAppAccount?   @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
   board          Board?             @relation(fields: [boardId], references: [id])
   currentState   State?             @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
   messages       Message[]
@@ -254,6 +261,11 @@ model Board {
   ownerId     String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  adminStatus   String   @default("active")
+  ownerStatus   String   @default("active")
+  behaviorMode  String   @default("reactive")
+  boardCustomFields Json @default("[]")
+  contextWindowSize Int  @default(20)
 
   team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   states       State[]        @relation("BoardStates")
@@ -267,6 +279,8 @@ model Board {
   brainFAQs      BrainFAQ[]
   stageTransitions StageTransition[]
   conversations Conversation[]
+  channels      BoardChannel[]
+  aiProviderConfig AIProviderConfig?
 
   @@map("boards")
 }
@@ -304,6 +318,16 @@ model State {
   nextStateId    String?
   config         Json?
   fieldDefinitions Json?
+  behaviorMode          String?
+  dataToCollect         Json    @default("[]")
+  completionRule        String?
+  availableTools        Json    @default("[]")
+  escalateOnNoReply     Int?
+  escalateOnLowConfidence Boolean @default(true)
+  escalateOnOffMission  Boolean @default(true)
+  maxFollowups          Int       @default(3)
+  followupAction        String    @default("escalate")
+  followupTargetState   String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -528,4 +552,124 @@ model ConversationMemory {
   @@unique([conversationId, key])
   @@index([conversationId])
   @@map("conversation_memory")
+}
+
+// ============================================
+// MULTICHANNEL & DYNAMIC FIELDS (Sprint 6)
+// ============================================
+
+model BoardChannel {
+  id          String   @id @default(cuid())
+  boardId     String
+  platform    String
+  status      String   @default("disconnected")
+  telegramBotToken      String?
+  telegramBotUsername   String?
+  telegramWebhookSecret String?
+  waPhoneNumberId       String?
+  waAccessToken         String?
+  waBusinessAccountId   String?
+  waVerifyToken         String?
+  igPageId              String?
+  igAccessToken         String?
+  lastError             String?
+  connectedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, platform])
+  @@map("board_channels")
+}
+
+model AdminNotification {
+  id             String   @id @default(cuid())
+  boardId        String
+  conversationId String
+  type           String
+  message        String
+  resolved       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@map("admin_notifications")
+}
+
+// ============================================
+// TOOL USE FRAMEWORK (Phase 2)
+// ============================================
+
+model ToolCallLog {
+  id             String   @id @default(cuid())
+  conversationId String
+  stateId        String?
+  toolName       String
+  inputJson      Json
+  outputJson     Json?
+  success        Boolean
+  errorMessage   String?
+  durationMs     Int?
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([toolName])
+  @@map("tool_call_logs")
+}
+
+// ============================================
+// AI PROVIDER ABSTRACTION (Phase 2)
+// ============================================
+
+model AIProviderConfig {
+  id                String   @id @default(cuid())
+  boardId           String   @unique
+  board             Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  defaultProvider   String   @default("groq")
+  defaultModel      String   @default("llama-3.3-70b-versatile")
+  fallbackProvider  String?
+  fallbackModel     String?
+
+  // JSON: { "extraction": "groq/llama-3.3-70b-versatile", "summarization": "deepseek/deepseek-chat" }
+  modelOverrides    Json     @default("{}")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("ai_provider_configs")
+}
+
+model PlatformAPIKey {
+  id                  String   @id @default(cuid())
+  provider            String   @unique
+  encryptedKey        String
+  isActive            Boolean  @default(true)
+  monthlyBudgetCents  Int?
+
+  createdAt           DateTime @default(now())
+
+  @@map("platform_api_keys")
+}
+
+// ============================================
+// BACKGROUND JOB QUEUE (Phase 3)
+// ============================================
+
+model Job {
+  id           String    @id @default(cuid())
+  type         String    // "process_message" | "escalation_check" | "summarize_conversation"
+  payload      Json
+  scheduledFor DateTime
+  status       String    @default("pending")  // pending | running | completed | failed | cancelled
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  lastError    String?
+  leadId       String?
+  boardId      String?
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  @@index([status, scheduledFor])
+  @@index([leadId])
+  @@map("jobs")
 }

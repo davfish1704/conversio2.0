@@ -12,6 +12,15 @@ export interface State {
   orderIndex: number
   nextStateId: string | null
   config: any
+  dataToCollect?: any
+  completionRule?: string | null
+  availableTools?: string[]
+  behaviorMode?: string | null
+  escalateOnLowConfidence?: boolean
+  escalateOnOffMission?: boolean
+  escalateOnNoReply?: number | null
+  maxFollowups?: number
+  followupAction?: string
 }
 
 const typeColors: Record<string, string> = {

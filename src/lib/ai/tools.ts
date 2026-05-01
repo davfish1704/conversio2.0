@@ -6,7 +6,8 @@
 
 import { prisma } from "@/lib/db"
 import { transitionState } from "@/lib/state-machine"
-import type { GroqTool } from "@/lib/ai/groq-client"
+import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
+import type { ToolDefinition } from "@/lib/ai/providers/types"
 
 // ── ToolContext ───────────────────────────────────────────────────────────────
 
@@ -15,128 +16,112 @@ export interface ToolContext {
   boardId: string
   waAccountId: string
   customerPhone: string
+  channel: string
   simulate: boolean
   sentMessages: string[]      // Engine initialisiert; send_text/send_asset pushen hier rein (simulate)
   stateTransitions: string[]  // Engine initialisiert; change_state pusht hier rein (simulate)
+  dataToCollect: string[]     // Felder die dieser State sammeln soll (für collectedFields-Tracking)
 }
 
 // ── Tool-Definitionen (JSON Schema) ──────────────────────────────────────────
 
-export const TOOL_DEFINITIONS: GroqTool[] = [
+export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
-    type: "function",
-    function: {
-      name: "change_state",
-      description:
-        "Wechselt den aktuellen Funnel-State der Konversation. Nutze dieses Tool wenn der Kunde bereit für den nächsten Schritt ist.",
-      parameters: {
-        type: "object",
-        properties: {
-          stateId: {
-            type: "string",
-            description: "Die ID des Ziel-States (muss zu diesem Board gehören)",
-          },
+    name: "change_state",
+    description:
+      "Wechselt den aktuellen Funnel-State der Konversation. Nutze dieses Tool wenn der Kunde bereit für den nächsten Schritt ist.",
+    parameters: {
+      type: "object",
+      properties: {
+        stateId: {
+          type: "string",
+          description: "Die ID des Ziel-States (muss zu diesem Board gehören)",
         },
-        required: ["stateId"],
       },
+      required: ["stateId"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "send_text",
-      description: "Sendet eine Textnachricht an den Kunden via WhatsApp.",
-      parameters: {
-        type: "object",
-        properties: {
-          text: {
-            type: "string",
-            description: "Der Nachrichtentext (max. 4096 Zeichen)",
-          },
+    name: "send_text",
+    description: "Sendet eine Textnachricht an den Kunden.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "Der Nachrichtentext (max. 4096 Zeichen)",
         },
-        required: ["text"],
       },
+      required: ["text"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "send_asset",
-      description:
-        "Sendet ein Board-Asset (Dokument, Bild, Text-Snippet) an den Kunden. Verwende search_assets um gültige Asset-IDs zu finden.",
-      parameters: {
-        type: "object",
-        properties: {
-          assetId: {
-            type: "string",
-            description: "Die ID des BoardAssets",
-          },
+    name: "send_asset",
+    description:
+      "Sendet ein Board-Asset (Dokument, Bild, Text-Snippet) an den Kunden. Verwende search_assets um gültige Asset-IDs zu finden.",
+    parameters: {
+      type: "object",
+      properties: {
+        assetId: {
+          type: "string",
+          description: "Die ID des BoardAssets",
         },
-        required: ["assetId"],
       },
+      required: ["assetId"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "search_assets",
-      description:
-        "Sucht nach Board-Assets anhand von Stichwörtern. Gibt Asset-IDs und Namen zurück die für send_asset genutzt werden können.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "Suchbegriff für Asset-Name oder Tags",
-          },
-          type: {
-            type: "string",
-            enum: ["AUDIO_MEMO", "PDF_DOC", "IMAGE_ASSET", "TEXT_SNIPPET", "TEMPLATE", "KNOWLEDGE_BASE"],
-            description: "Optionaler Filter nach Asset-Typ",
-          },
+    name: "search_assets",
+    description:
+      "Sucht nach Board-Assets anhand von Stichwörtern. Gibt Asset-IDs und Namen zurück die für send_asset genutzt werden können.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Suchbegriff für Asset-Name oder Tags",
         },
-        required: ["query"],
+        type: {
+          type: "string",
+          enum: ["AUDIO_MEMO", "PDF_DOC", "IMAGE_ASSET", "TEXT_SNIPPET", "TEMPLATE", "KNOWLEDGE_BASE"],
+          description: "Optionaler Filter nach Asset-Typ",
+        },
       },
+      required: ["query"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "store_memory",
-      description:
-        "Speichert einen wichtigen Fakt über den Kunden persistent (z.B. Name, Produktwunsch, Budget). Wird in nachfolgenden Gesprächen wieder geladen.",
-      parameters: {
-        type: "object",
-        properties: {
-          key: {
-            type: "string",
-            description: "Schlüssel des Fakts (z.B. 'customer_name', 'interested_product', 'budget')",
-          },
-          value: {
-            type: "string",
-            description: "Wert des zu speichernden Fakts",
-          },
+    name: "store_memory",
+    description:
+      "Speichert einen wichtigen Fakt über den Kunden persistent (z.B. Name, Produktwunsch, Budget). Wird in nachfolgenden Gesprächen wieder geladen.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "Schlüssel des Fakts (z.B. 'customer_name', 'interested_product', 'budget')",
         },
-        required: ["key", "value"],
+        value: {
+          type: "string",
+          description: "Wert des zu speichernden Fakts",
+        },
       },
+      required: ["key", "value"],
     },
   },
   {
-    type: "function",
-    function: {
-      name: "get_history",
-      description:
-        "Lädt ältere Nachrichten aus dem Gesprächsverlauf über die zuletzt geladenen 10 hinaus.",
-      parameters: {
-        type: "object",
-        properties: {
-          limit: {
-            type: "number",
-            description: "Anzahl der Nachrichten (Standard: 10, Maximum: 20)",
-          },
+    name: "get_history",
+    description:
+      "Lädt ältere Nachrichten aus dem Gesprächsverlauf über die zuletzt geladenen 10 hinaus.",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: {
+          type: "number",
+          description: "Anzahl der Nachrichten (Standard: 10, Maximum: 20)",
         },
-        required: [],
       },
+      required: [],
     },
   },
 ]
@@ -201,24 +186,23 @@ export async function executeSendText(
       data: { lastMessageAt: new Date() },
     })
 
-    // Via WhatsApp senden
-    const result = await sendViaWhatsApp(ctx.customerPhone, args.text, ctx.waAccountId)
+    // Via Dispatcher senden (Telegram, WhatsApp, etc.)
+    const dispatchResult = await dispatchMessage(ctx.conversationId, args.text)
 
-    if (!result.success) {
-      // Fehlschlag loggen damit Operator eingreifen kann
+    if (!dispatchResult.ok) {
       await prisma.executionLog.create({
         data: {
           boardId: ctx.boardId,
           conversationId: ctx.conversationId,
           action: "SEND_TEXT_FAILED",
           input: args.text,
-          output: result.error,
+          output: dispatchResult.error,
           status: "ERROR",
-          errorMessage: result.error,
+          errorMessage: dispatchResult.error,
           needsAttention: true,
         },
       })
-      return `FEHLER: WhatsApp-Versand fehlgeschlagen — ${result.error}`
+      return `FEHLER: Versand fehlgeschlagen — ${dispatchResult.error}`
     }
 
     return `OK: Nachricht gesendet (${args.text.length} Zeichen)`
@@ -276,10 +260,10 @@ export async function executeSendAsset(
       data: { lastMessageAt: new Date() },
     })
 
-    const result = await sendViaWhatsApp(ctx.customerPhone, messageText, ctx.waAccountId)
+    const assetSendResult = await dispatchMessage(ctx.conversationId, messageText)
 
-    if (!result.success) {
-      return `FEHLER: Asset-Versand fehlgeschlagen — ${result.error}`
+    if (!assetSendResult.ok) {
+      return `FEHLER: Asset-Versand fehlgeschlagen — ${assetSendResult.error}`
     }
 
     return `OK: Asset '${asset.name}' gesendet`
@@ -347,6 +331,22 @@ export async function executeStoreMemory(
         key: args.key,
         value: args.value,
       },
+    })
+
+    // Sync into Conversation.customData and track collectedFields
+    const conv = await prisma.conversation.findUnique({
+      where: { id: ctx.conversationId },
+      select: { customData: true, collectedFields: true },
+    })
+    const customData = ((conv?.customData ?? {}) as Record<string, unknown>)
+    customData[args.key] = args.value
+    const collectedFields = ((conv?.collectedFields ?? []) as string[])
+    if (ctx.dataToCollect.includes(args.key) && !collectedFields.includes(args.key)) {
+      collectedFields.push(args.key)
+    }
+    await prisma.conversation.update({
+      where: { id: ctx.conversationId },
+      data: { customData: customData as any, collectedFields: collectedFields as any },
     })
 
     return `OK: Gespeichert — ${args.key} = ${args.value}`
@@ -417,65 +417,3 @@ export async function executeTool(
   }
 }
 
-// ── Private Helper ────────────────────────────────────────────────────────────
-// Lokale Kopie von agent.ts:sendWhatsAppMessage (dort private).
-// TODO Sprint 5: zu einem shared src/lib/whatsapp-sender.ts extrahieren.
-
-interface SendResult {
-  success: boolean
-  messageId?: string
-  error?: string
-}
-
-async function sendViaWhatsApp(
-  to: string,
-  message: string,
-  waAccountId: string
-): Promise<SendResult> {
-  try {
-    const waAccount = await prisma.whatsAppAccount.findUnique({
-      where: { id: waAccountId },
-    })
-
-    if (!waAccount) {
-      return { success: false, error: "WhatsApp-Account nicht gefunden" }
-    }
-
-    const accessToken = process.env.META_ACCESS_TOKEN
-
-    if (!accessToken) {
-      return { success: false, error: "META_ACCESS_TOKEN nicht konfiguriert" }
-    }
-
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${waAccount.phoneNumber}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to,
-          type: "text",
-          text: { body: message },
-        }),
-      }
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      return { success: false, error: data.error?.message || "Meta API Fehler" }
-    }
-
-    return { success: true, messageId: data.messages?.[0]?.id }
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unbekannter Fehler",
-    }
-  }
-}

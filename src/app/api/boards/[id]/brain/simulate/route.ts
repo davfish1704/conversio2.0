@@ -46,6 +46,7 @@ export async function POST(
     boardId: params.id,
     waAccountId: "simulate",
     customerPhone: "simulate",
+    channel: "whatsapp",
     userMessage: message || "Hello",
     brain: brainConfig as any,
     state: {
@@ -54,7 +55,12 @@ export async function POST(
       mission: mission || null,
       rules: null,
       type: "AI",
+      nextStateId: null,
+      dataToCollect: [],
+      completionRule: null,
     },
+    collectedFields: [],
+    customData: {},
     assets,
   }
 

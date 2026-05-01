@@ -2,6 +2,8 @@ import { prisma } from "./db"
 import { generateAIResponse } from "./ai-service"
 import { getCurrentState, checkStateTransition } from "./state-machine"
 import { runAgentLoop, type AgentLoopContext } from "./ai/tool-engine"
+import { sendMessage as dispatchMessage } from "./messaging/dispatcher"
+import { createNotification } from "./notifications"
 
 /**
  * Main agent orchestration:
@@ -23,9 +25,6 @@ export async function processAgentResponse(conversationId: string, userMessage: 
 
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      include: {
-        waAccount: true,
-      },
     })
 
     if (!conversation) {
@@ -92,11 +91,23 @@ export async function processAgentResponse(conversationId: string, userMessage: 
       const loopCtx: AgentLoopContext = {
         conversationId,
         boardId: conversation.boardId || "",
-        waAccountId: conversation.waAccountId,
+        waAccountId: conversation.waAccountId ?? "",
         customerPhone: conversation.customerPhone,
+        channel: conversation.channel,
         userMessage,
         brain: brainConfig as any,
-        state: currentState,
+        state: {
+          id: currentState.id,
+          name: currentState.name,
+          mission: currentState.mission,
+          rules: currentState.rules,
+          type: currentState.type,
+          nextStateId: currentState.nextStateId ?? null,
+          dataToCollect: (currentState.dataToCollect as string[]) ?? [],
+          completionRule: currentState.completionRule ?? null,
+        },
+        collectedFields: (conversation.collectedFields as string[]) ?? [],
+        customData: (conversation.customData as Record<string, unknown>) ?? {},
         assets: [],
       }
 
@@ -151,23 +162,15 @@ export async function processAgentResponse(conversationId: string, userMessage: 
       },
     })
 
-    // 6. Send via WhatsApp API (if waAccount exists and has real phoneNumberId)
-    if (conversation.waAccount?.phoneNumber && conversation.waAccount.phoneNumber !== "test-phone") {
-      const sendResult = await sendWhatsAppMessage(
-        conversation.customerPhone,
-        responseText,
-        conversation.waAccountId
-      )
-
-      // Update message with external ID
-      if (sendResult.success && sendResult.messageId) {
-        await prisma.message.update({
-          where: { id: savedMessage.id },
-          data: { externalId: sendResult.messageId },
-        })
-      }
-    } else {
-      console.log(`📤 Message saved locally (no WhatsApp send for test account)`)
+    // 6. Send via dispatcher (handles Telegram, WhatsApp, etc.)
+    const sendResult = await dispatchMessage(conversationId, responseText)
+    if (sendResult.ok && sendResult.externalMessageId) {
+      await prisma.message.update({
+        where: { id: savedMessage.id },
+        data: { externalId: sendResult.externalMessageId },
+      })
+    } else if (!sendResult.ok) {
+      console.log(`📤 Message saved locally (send skipped: ${sendResult.error})`)
     }
 
     // 7. Update conversation lastMessageAt
@@ -187,9 +190,16 @@ export async function processAgentResponse(conversationId: string, userMessage: 
   } catch (error) {
     console.error("❌ Agent processing error:", error)
 
+    // Try to get boardId for notification
+    let boardIdForLog = "unknown"
+    try {
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { boardId: true } })
+      boardIdForLog = conv?.boardId || "unknown"
+    } catch { /* ignore */ }
+
     await prisma.executionLog.create({
       data: {
-        boardId: "unknown",
+        boardId: boardIdForLog,
         conversationId,
         action: "AGENT_RESPONSE",
         input: userMessage,
@@ -198,72 +208,15 @@ export async function processAgentResponse(conversationId: string, userMessage: 
         needsAttention: true,
       },
     })
-  }
-}
 
-/* ──────────────────────────── WhatsApp Sender ───────────────────────────── */
-
-interface SendResult {
-  success: boolean
-  messageId?: string
-  error?: string
-}
-
-async function sendWhatsAppMessage(
-  to: string,
-  message: string,
-  waAccountId: string
-): Promise<SendResult> {
-  try {
-    const waAccount = await prisma.whatsAppAccount.findUnique({
-      where: { id: waAccountId },
-    })
-
-    if (!waAccount) {
-      return { success: false, error: "WhatsApp account not found" }
-    }
-
-    const phoneNumberId = waAccount.phoneNumber
-    const accessToken = process.env.META_ACCESS_TOKEN
-
-    if (!accessToken) {
-      return { success: false, error: "META_ACCESS_TOKEN not configured" }
-    }
-
-    const response = await fetch(
-      `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to,
-          type: "text",
-          text: { body: message },
-        }),
-      }
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      console.error("❌ WhatsApp send failed:", data)
-      return { success: false, error: data.error?.message || "Unknown error" }
-    }
-
-    return {
-      success: true,
-      messageId: data.messages?.[0]?.id,
-    }
-  } catch (error) {
-    console.error("❌ WhatsApp send error:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+    if (boardIdForLog !== "unknown") {
+      await createNotification(
+        boardIdForLog,
+        conversationId,
+        "agent_error",
+        error instanceof Error ? error.message : "Unknown agent error"
+      )
     }
   }
 }
+

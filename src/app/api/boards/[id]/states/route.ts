@@ -51,7 +51,12 @@ export async function POST(
 
   try {
     const body = await req.json()
-    const { name, orderIndex, mission, type, rules, nextStateId, config } = body
+    const {
+      name, orderIndex, mission, type, rules, nextStateId, config,
+      dataToCollect, completionRule, availableTools,
+      behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
+      escalateOnNoReply, maxFollowups, followupAction,
+    } = body
 
     if (!name) {
       return jsonError("Name is required.", "INVALID_INPUT", 400)
@@ -69,6 +74,14 @@ export async function POST(
       return jsonError("You don't have permission for this action.", "FORBIDDEN", 403)
     }
 
+    const dataToCollectArr = Array.isArray(dataToCollect)
+      ? dataToCollect
+      : typeof dataToCollect === "string" && dataToCollect.trim()
+        ? dataToCollect.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : []
+
+    const availableToolsArr = Array.isArray(availableTools) ? availableTools : []
+
     const state = await prisma.state.create({
       data: {
         name,
@@ -79,6 +92,15 @@ export async function POST(
         rules: rules || null,
         nextStateId: nextStateId || null,
         config: config || null,
+        dataToCollect: dataToCollectArr,
+        completionRule: completionRule || null,
+        availableTools: availableToolsArr,
+        behaviorMode: behaviorMode || null,
+        escalateOnLowConfidence: escalateOnLowConfidence ?? true,
+        escalateOnOffMission: escalateOnOffMission ?? true,
+        escalateOnNoReply: escalateOnNoReply ?? null,
+        maxFollowups: maxFollowups ?? 3,
+        followupAction: followupAction || "escalate",
       },
     })
 
@@ -100,7 +122,12 @@ export async function PUT(
 
   try {
     const body = await req.json()
-    const { id: stateId, name, mission, type, rules, orderIndex, nextStateId, config } = body
+    const {
+      id: stateId, name, mission, type, rules, orderIndex, nextStateId, config,
+      dataToCollect, completionRule, availableTools,
+      behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
+      escalateOnNoReply, maxFollowups, followupAction,
+    } = body
 
     if (!stateId) {
       return jsonError("State ID is required.", "INVALID_INPUT", 400)
@@ -118,6 +145,14 @@ export async function PUT(
       return jsonError("You don't have permission for this action.", "FORBIDDEN", 403)
     }
 
+    const dataToCollectArr = Array.isArray(dataToCollect)
+      ? dataToCollect
+      : typeof dataToCollect === "string" && dataToCollect.trim()
+        ? dataToCollect.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : dataToCollect !== undefined ? [] : undefined
+
+    const availableToolsArr = Array.isArray(availableTools) ? availableTools : availableTools !== undefined ? [] : undefined
+
     const state = await prisma.state.update({
       where: { id: stateId },
       data: {
@@ -128,6 +163,15 @@ export async function PUT(
         orderIndex: orderIndex !== undefined ? orderIndex : undefined,
         nextStateId: nextStateId !== undefined ? (nextStateId || null) : undefined,
         config: config !== undefined ? (config || null) : undefined,
+        ...(dataToCollectArr !== undefined ? { dataToCollect: dataToCollectArr } : {}),
+        ...(completionRule !== undefined ? { completionRule: completionRule || null } : {}),
+        ...(availableToolsArr !== undefined ? { availableTools: availableToolsArr } : {}),
+        ...(behaviorMode !== undefined ? { behaviorMode: behaviorMode || null } : {}),
+        ...(escalateOnLowConfidence !== undefined ? { escalateOnLowConfidence } : {}),
+        ...(escalateOnOffMission !== undefined ? { escalateOnOffMission } : {}),
+        ...(escalateOnNoReply !== undefined ? { escalateOnNoReply: escalateOnNoReply ?? null } : {}),
+        ...(maxFollowups !== undefined ? { maxFollowups: maxFollowups ?? 3 } : {}),
+        ...(followupAction !== undefined ? { followupAction: followupAction || "escalate" } : {}),
       },
     })
 

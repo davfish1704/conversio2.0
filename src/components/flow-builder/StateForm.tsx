@@ -12,6 +12,15 @@ export interface StateFormData {
   orderIndex: number
   nextStateId: string | null
   config: any
+  dataToCollect: string
+  completionRule: string
+  availableTools: string[]
+  behaviorMode: string
+  escalateOnLowConfidence: boolean
+  escalateOnOffMission: boolean
+  escalateOnNoReply: number | null
+  maxFollowups: number
+  followupAction: string
 }
 
 interface StateOption {
@@ -29,6 +38,13 @@ interface StateFormProps {
   submitLabel: string
 }
 
+const aiModels = [
+  { value: "conversio", label: "Conversio (Standard)" },
+  { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
+  { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Schnell)" },
+  { value: "gemma2-9b-it", label: "Gemma 2 9B" },
+]
+
 const stateTypes = [
   { value: "AI", label: "AI", desc: "AI-powered conversation" },
   { value: "MESSAGE", label: "Message", desc: "Fixed text message" },
@@ -37,12 +53,20 @@ const stateTypes = [
   { value: "WAIT", label: "Wait", desc: "Time delay" },
 ]
 
-const aiModels = [
-  { value: "conversio", label: "Conversio" },
-  { value: "gpt-4", label: "GPT-4" },
-  { value: "gpt-4o", label: "GPT-4o" },
-  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+const ALL_TOOLS = [
+  { name: "update_lead_data", label: "Lead-Daten speichern", isStub: false, desc: "Schreibt gesammelte Felder ins CRM" },
+  { name: "advance_state", label: "State wechseln", isStub: false, desc: "Wechselt zum nächsten Funnel-Schritt" },
+  { name: "escalate_to_human", label: "An Mensch eskalieren", isStub: false, desc: "Pausiert KI, informiert Mitarbeiter" },
+  { name: "send_template", label: "Template senden", isStub: false, desc: "Sendet ein vorkonfiguriertes Template" },
+  { name: "set_lead_score", label: "Lead bewerten", isStub: false, desc: "Setzt einen Score 0-100" },
+  { name: "book_calendar", label: "Termin buchen", isStub: true, desc: "Cal.com-Integration (bald)" },
+  { name: "send_email", label: "E-Mail senden", isStub: true, desc: "Resend-Integration (bald)" },
+  { name: "trigger_webhook", label: "Webhook auslösen", isStub: true, desc: "Zapier/Make/eigenes Backend (bald)" },
+  { name: "create_stripe_link", label: "Stripe-Link erstellen", isStub: true, desc: "Zahlungslink generieren (bald)" },
+  { name: "generate_pdf", label: "PDF generieren", isStub: true, desc: "PDF aus Template (bald)" },
 ]
+
+const DEFAULT_AI_TOOLS = ["update_lead_data", "advance_state", "escalate_to_human"]
 
 export default function StateForm({
   isOpen,
@@ -61,6 +85,15 @@ export default function StateForm({
     orderIndex: 0,
     nextStateId: null,
     config: {},
+    dataToCollect: "",
+    completionRule: "",
+    availableTools: DEFAULT_AI_TOOLS,
+    behaviorMode: "inherit",
+    escalateOnLowConfidence: true,
+    escalateOnOffMission: true,
+    escalateOnNoReply: null,
+    maxFollowups: 3,
+    followupAction: "escalate",
   })
   const { t } = useContext(LanguageContext)
 
@@ -69,6 +102,15 @@ export default function StateForm({
       setForm({
         ...initialData,
         config: initialData.config || {},
+        dataToCollect: initialData.dataToCollect || "",
+        completionRule: initialData.completionRule || "",
+        availableTools: initialData.availableTools?.length ? initialData.availableTools : DEFAULT_AI_TOOLS,
+        behaviorMode: initialData.behaviorMode || "inherit",
+        escalateOnLowConfidence: initialData.escalateOnLowConfidence ?? true,
+        escalateOnOffMission: initialData.escalateOnOffMission ?? true,
+        escalateOnNoReply: initialData.escalateOnNoReply ?? null,
+        maxFollowups: initialData.maxFollowups ?? 3,
+        followupAction: initialData.followupAction || "escalate",
       })
     } else {
       setForm({
@@ -79,6 +121,15 @@ export default function StateForm({
         orderIndex: states.length,
         nextStateId: null,
         config: {},
+        dataToCollect: "",
+        completionRule: "",
+        availableTools: DEFAULT_AI_TOOLS,
+        behaviorMode: "inherit",
+        escalateOnLowConfidence: true,
+        escalateOnOffMission: true,
+        escalateOnNoReply: null,
+        maxFollowups: 3,
+        followupAction: "escalate",
       })
     }
   }, [initialData, isOpen, states.length])
@@ -222,6 +273,162 @@ export default function StateForm({
                   <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
                     <span>{t("stateForm.precise")}</span>
                     <span>{t("stateForm.creative")}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Zu sammelnde Felder</label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Kommagetrennte Feldschlüssel (z.B. name,email,budget)</p>
+                  <textarea
+                    value={form.dataToCollect}
+                    onChange={(e) => setForm({ ...form, dataToCollect: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="vorname, nachname, email, budget"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Completion Rule</label>
+                  <select
+                    value={form.completionRule}
+                    onChange={(e) => setForm({ ...form, completionRule: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Standard (nächste Nachricht)</option>
+                    <option value="next_on_message">next_on_message — Weiter bei jeder Nachricht</option>
+                    <option value="all_collected">all_collected — Weiter wenn alle Felder gesammelt</option>
+                    <option value="manual_only">manual_only — Nur manuell weiterschalten</option>
+                  </select>
+                </div>
+
+                {/* Available Tools */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Verfügbare Tools</label>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Welche Aktionen die KI in diesem State ausführen darf</p>
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {ALL_TOOLS.map((tool) => {
+                      const checked = form.availableTools.includes(tool.name)
+                      return (
+                        <label
+                          key={tool.name}
+                          className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition-colors ${
+                            tool.isStub
+                              ? "border-gray-100 dark:border-gray-800 opacity-50 cursor-not-allowed"
+                              : checked
+                              ? "border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-900/20"
+                              : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={tool.isStub}
+                            onChange={(e) => {
+                              if (tool.isStub) return
+                              setForm((prev) => ({
+                                ...prev,
+                                availableTools: e.target.checked
+                                  ? [...prev.availableTools, tool.name]
+                                  : prev.availableTools.filter((t) => t !== tool.name),
+                              }))
+                            }}
+                            className="mt-0.5 w-3.5 h-3.5 text-purple-600 rounded focus:ring-purple-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{tool.label}</span>
+                              {tool.isStub && (
+                                <span className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 rounded">Bald</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-0.5">{tool.desc}</p>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Behavior Mode */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Verhaltensmodus</label>
+                  <select
+                    value={form.behaviorMode}
+                    onChange={(e) => setForm({ ...form, behaviorMode: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="inherit">inherit — Vom Board erben</option>
+                    <option value="reactive">reactive — Nur auf Nachrichten antworten</option>
+                    <option value="proactive">proactive — Selbst nachhaken</option>
+                  </select>
+                </div>
+
+                {/* Escalation Toggles */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Eskalation</label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={form.escalateOnLowConfidence}
+                      onChange={(e) => setForm({ ...form, escalateOnLowConfidence: e.target.checked })}
+                      className="w-4 h-4 text-orange-500 rounded focus:ring-orange-400"
+                    />
+                    Eskalieren bei niedriger Konfidenz
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={form.escalateOnOffMission}
+                      onChange={(e) => setForm({ ...form, escalateOnOffMission: e.target.checked })}
+                      className="w-4 h-4 text-orange-500 rounded focus:ring-orange-400"
+                    />
+                    Eskalieren wenn Lead off-mission ist
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={form.escalateOnNoReply !== null}
+                      onChange={(e) => setForm({ ...form, escalateOnNoReply: e.target.checked ? 24 : null })}
+                      className="w-4 h-4 text-orange-500 rounded focus:ring-orange-400"
+                    />
+                    Eskalieren bei ausbleibender Antwort
+                  </label>
+                  {form.escalateOnNoReply !== null && (
+                    <div className="pl-6">
+                      <label className="text-xs text-gray-500 dark:text-gray-400">Nach wie vielen Stunden?</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.escalateOnNoReply ?? 24}
+                        onChange={(e) => setForm({ ...form, escalateOnNoReply: parseInt(e.target.value) || 24 })}
+                        className="mt-1 w-32 px-3 py-1.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Max Followups + Action */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Max. Followups</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.maxFollowups}
+                      onChange={(e) => setForm({ ...form, maxFollowups: parseInt(e.target.value) || 0 })}
+                      className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Followup-Aktion</label>
+                    <select
+                      value={form.followupAction}
+                      onChange={(e) => setForm({ ...form, followupAction: e.target.value })}
+                      className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="escalate">escalate — Eskalieren</option>
+                      <option value="drop">drop — Aufgeben</option>
+                      <option value="advance_to_state">advance_to_state — Weiterschalten</option>
+                    </select>
                   </div>
                 </div>
               </div>

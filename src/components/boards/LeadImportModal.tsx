@@ -15,7 +15,7 @@ type ImportTab = "file" | "api"
 export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }: LeadImportModalProps) {
   const [activeTab, setActiveTab] = useState<ImportTab>("file")
   const [file, setFile] = useState<File | null>(null)
-  const [manualLead, setManualLead] = useState({ name: "", phone: "", email: "", tags: "" })
+  const [manualLead, setManualLead] = useState({ name: "", phone: "", email: "", notes: "", tags: "", channel: "manual" as "whatsapp" | "telegram" | "manual" })
   const [isUploading, setIsUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ imported: number; errors: string[] } | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -56,7 +56,7 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
 
   const handleCreateManual = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!manualLead.phone) return
+    if (manualLead.channel === "whatsapp" && !manualLead.phone) return
 
     setIsCreating(true)
     try {
@@ -65,15 +65,17 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: manualLead.name,
-          phone: manualLead.phone,
+          phone: manualLead.channel !== "manual" ? manualLead.phone : undefined,
           email: manualLead.email,
+          notes: manualLead.notes,
           tags: manualLead.tags ? manualLead.tags.split(",").map((t) => t.trim()) : [],
           source: "manual",
+          channel: manualLead.channel,
         }),
       })
 
       if (res.ok) {
-        setManualLead({ name: "", phone: "", email: "", tags: "" })
+        setManualLead({ name: "", phone: "", email: "", notes: "", tags: "", channel: "manual" })
         onSuccess()
       }
     } finally {
@@ -210,17 +212,48 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
             <div className="space-y-6">
               <form onSubmit={handleCreateManual} className="space-y-4">
                 <h3 className="text-sm font-medium text-gray-900 dark:text-white">{t("leadImport.addManually")}</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.name")}</label>
-                    <input
-                      type="text"
-                      value={manualLead.name}
-                      onChange={(e) => setManualLead({ ...manualLead, name: e.target.value })}
-                      className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Max Mustermann"
-                    />
+
+                {/* Channel Picker */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Kanal</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["whatsapp", "telegram", "manual"] as const).map((ch) => {
+                      const labels: Record<string, string> = { whatsapp: "WhatsApp", telegram: "Telegram", manual: "Manuell" }
+                      const icons: Record<string, string> = { whatsapp: "💬", telegram: "✈️", manual: "📝" }
+                      return (
+                        <button
+                          key={ch}
+                          type="button"
+                          onClick={() => setManualLead({ ...manualLead, channel: ch })}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-sm font-medium transition ${
+                            manualLead.channel === ch
+                              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+                              : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                          }`}
+                        >
+                          <span>{icons[ch]}</span>
+                          <span>{labels[ch]}</span>
+                        </button>
+                      )
+                    })}
                   </div>
+                </div>
+
+                {/* Name (always) */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.name")} *</label>
+                  <input
+                    type="text"
+                    value={manualLead.name}
+                    onChange={(e) => setManualLead({ ...manualLead, name: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Max Mustermann"
+                    required
+                  />
+                </div>
+
+                {/* WhatsApp: phone required */}
+                {manualLead.channel === "whatsapp" && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("leadImport.phoneRequired")}</label>
                     <input
@@ -232,7 +265,43 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
                       required
                     />
                   </div>
-                </div>
+                )}
+
+                {/* Telegram: optional phone + info */}
+                {manualLead.channel === "telegram" && (
+                  <div className="space-y-2">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        ✈️ Telegram-Bots können erst schreiben, nachdem der Lead dem Bot eine Nachricht sendet. Du erhältst einen Einladungslink, sobald der Lead erstellt wurde.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.phone")} (optional)</label>
+                      <input
+                        type="tel"
+                        value={manualLead.phone}
+                        onChange={(e) => setManualLead({ ...manualLead, phone: e.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="+4915731329868 (für interne Notiz)"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Manual: notes */}
+                {manualLead.channel === "manual" && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Notizen (optional)</label>
+                    <textarea
+                      value={manualLead.notes}
+                      onChange={(e) => setManualLead({ ...manualLead, notes: e.target.value })}
+                      className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      placeholder="Intern: Interessent aus Messe..."
+                      rows={2}
+                    />
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.email")}</label>
@@ -255,9 +324,10 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
                     />
                   </div>
                 </div>
+
                 <button
                   type="submit"
-                  disabled={isCreating}
+                  disabled={isCreating || (manualLead.channel === "whatsapp" && !manualLead.phone) || !manualLead.name.trim()}
                   className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isCreating ? t("leadImport.saving") : t("leadImport.saveLead")}

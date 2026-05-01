@@ -25,19 +25,30 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
     return stateMap.get(nextStateId)?.name
   }
 
+  const buildStatePayload = (data: StateFormData) => ({
+    name: data.name,
+    type: data.type,
+    mission: data.mission || null,
+    rules: data.rules || null,
+    orderIndex: data.orderIndex,
+    nextStateId: data.nextStateId,
+    config: data.config,
+    dataToCollect: data.dataToCollect || "",
+    completionRule: data.completionRule || null,
+    availableTools: data.availableTools ?? [],
+    behaviorMode: data.behaviorMode || null,
+    escalateOnLowConfidence: data.escalateOnLowConfidence ?? true,
+    escalateOnOffMission: data.escalateOnOffMission ?? true,
+    escalateOnNoReply: data.escalateOnNoReply ?? null,
+    maxFollowups: data.maxFollowups ?? 3,
+    followupAction: data.followupAction || "escalate",
+  })
+
   const handleCreate = async (data: StateFormData) => {
     const res = await fetch(`/api/boards/${boardId}/states`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: data.name,
-        type: data.type,
-        mission: data.mission || null,
-        rules: data.rules || null,
-        orderIndex: data.orderIndex,
-        nextStateId: data.nextStateId,
-        config: data.config,
-      }),
+      body: JSON.stringify(buildStatePayload(data)),
     })
     if (res.ok) {
       setIsFormOpen(false)
@@ -50,16 +61,7 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
     const res = await fetch(`/api/boards/${boardId}/states`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: data.id,
-        name: data.name,
-        type: data.type,
-        mission: data.mission || null,
-        rules: data.rules || null,
-        orderIndex: data.orderIndex,
-        nextStateId: data.nextStateId,
-        config: data.config,
-      }),
+      body: JSON.stringify({ id: data.id, ...buildStatePayload(data) }),
     })
     if (res.ok) {
       setEditingState(null)
@@ -195,6 +197,19 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
                 orderIndex: editingState.orderIndex,
                 nextStateId: editingState.nextStateId,
                 config: editingState.config || {},
+                dataToCollect: Array.isArray(editingState.dataToCollect)
+                  ? (editingState.dataToCollect as string[]).join(", ")
+                  : editingState.dataToCollect || "",
+                completionRule: editingState.completionRule || "",
+                availableTools: Array.isArray(editingState.availableTools)
+                  ? editingState.availableTools
+                  : [],
+                behaviorMode: editingState.behaviorMode || "inherit",
+                escalateOnLowConfidence: editingState.escalateOnLowConfidence ?? true,
+                escalateOnOffMission: editingState.escalateOnOffMission ?? true,
+                escalateOnNoReply: editingState.escalateOnNoReply ?? null,
+                maxFollowups: editingState.maxFollowups ?? 3,
+                followupAction: editingState.followupAction || "escalate",
               }
             : undefined
         }
