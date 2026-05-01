@@ -7,6 +7,8 @@ import { escalateToHumanTool } from "./definitions/escalate_to_human"
 import { sendTemplateTool } from "./definitions/send_template"
 import { setLeadScoreTool } from "./definitions/set_lead_score"
 
+import { suggestChannelSwitchTool } from "./definitions/suggest-channel-switch"
+
 // Stub tools
 import { bookCalendarTool } from "./definitions/book_calendar"
 import { sendEmailTool } from "./definitions/send_email"
@@ -18,6 +20,7 @@ import { generatePdfTool } from "./definitions/generate_pdf"
 import { changStateLegacyTool, sendTextLegacyTool, storeMemoryLegacyTool, getHistoryLegacyTool } from "./definitions/legacy_tools"
 
 registerTool(updateLeadDataTool)
+registerTool(suggestChannelSwitchTool)
 registerTool(advanceStateTool)
 registerTool(escalateToHumanTool)
 registerTool(sendTemplateTool)

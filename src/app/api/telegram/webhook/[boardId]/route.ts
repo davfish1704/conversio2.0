@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { enqueueJob } from "@/lib/jobs/enqueue"
+import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
+
+const CHANNEL_TOKEN_RE = /^[\w-]{10,16}$/
 
 export async function POST(req: NextRequest, { params }: { params: { boardId: string } }) {
   const { boardId } = params
@@ -23,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     select: { adminStatus: true, ownerStatus: true },
   })
   const boardActive = board
-    ? (board as any).adminStatus !== "disabled" && (board as any).ownerStatus !== "paused"
+    ? (board as any).adminStatus.toString() !== "SUSPENDED" && (board as any).ownerStatus !== "paused"
     : true
 
   try {
@@ -40,78 +43,145 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     const content = extractContent(message)
     const timestamp = new Date(message.date * 1000)
 
+    // Handle deep link: /start <token|lead_id>
+    if (typeof content === "string" && content.startsWith("/start ")) {
+      const startParam = content.slice(7).trim()
+
+      // Channel-Switch-Token erkennen (nicht lead_-Präfix, 10-16 Zeichen)
+      if (!startParam.startsWith("lead_") && CHANNEL_TOKEN_RE.test(startParam)) {
+        const invite = await findInviteByToken(startParam)
+        if (invite && invite.status === "PENDING" && new Date(invite.expiresAt) > new Date()) {
+          let conv = await (prisma as any).conversation.findFirst({
+            where: { leadId: invite.lead.id, channel: "telegram", boardId },
+          })
+          if (!conv) {
+            conv = await (prisma as any).conversation.create({
+              data: {
+                leadId: invite.lead.id,
+                boardId,
+                channel: "telegram",
+                externalId: chatId,
+                status: "ACTIVE",
+                lastMessageAt: timestamp,
+              },
+            })
+          } else {
+            await (prisma as any).conversation.update({
+              where: { id: conv.id },
+              data: { externalId: chatId, lastMessageAt: timestamp },
+            })
+          }
+          await consumeInvite(startParam, conv.id)
+          // Kein Job für die /start-Nachricht
+          return NextResponse.json({ ok: true })
+        }
+      }
+    }
+
     // Handle deep link: /start lead_<id> — bind chat_id to a manually-created lead
     if (typeof content === "string" && content.startsWith("/start lead_")) {
       const claimedLeadId = content.replace("/start lead_", "").trim()
-      const manualLead = await prisma.conversation.findFirst({
-        where: { id: claimedLeadId, boardId, channel: "telegram", externalId: null },
+      const manualLead = await (prisma as any).lead.findFirst({
+        where: { id: claimedLeadId, boardId, channel: "telegram" },
+        include: {
+          conversations: {
+            where: { channel: "telegram", externalId: null },
+            take: 1,
+          },
+        },
       })
       if (manualLead) {
-        await prisma.conversation.update({
+        // Update lead phone mit chatId (phone = chatId für Telegram)
+        await (prisma as any).lead.update({
           where: { id: manualLead.id },
           data: {
-            externalId: chatId,
-            customerPhone: chatId,
-            customerName: manualLead.customerName || customerName,
-            lastMessageAt: timestamp,
+            phone: chatId,
+            name: manualLead.name || customerName,
           },
         })
-        // Send a welcome message via normal pipeline on the now-reachable lead
-        if (boardActive) {
-          await enqueueJob({
-            type: "process_message",
-            payload: { conversationId: manualLead.id, userMessage: "/start" },
-            leadId: manualLead.id,
-            boardId,
+        // Update conversation externalId
+        const conv = manualLead.conversations[0]
+        if (conv) {
+          await (prisma as any).conversation.update({
+            where: { id: conv.id },
+            data: {
+              externalId: chatId,
+              lastMessageAt: timestamp,
+            },
           })
+          if (boardActive) {
+            await enqueueJob({
+              type: "process_message",
+              payload: { conversationId: conv.id, userMessage: "/start" },
+              leadId: manualLead.id,
+              boardId,
+            })
+          }
         }
         return NextResponse.json({ ok: true })
       }
       // Falls through to normal find-or-create if no manual lead matched
     }
 
-    // Find or create conversation
-    let conversation = await prisma.conversation.findFirst({
-      where: { boardId, externalId: chatId, channel: "telegram" },
+    // Find or create via lead (phone = chatId für Telegram)
+    let lead = await (prisma as any).lead.findFirst({
+      where: { boardId, phone: chatId, channel: "telegram" },
     })
 
-    if (!conversation) {
+    let conversation = null
+
+    if (!lead) {
       const defaultBoard = await prisma.board.findUnique({
         where: { id: boardId },
         include: { states: { orderBy: { orderIndex: "asc" }, take: 1 } },
       })
-      // Need a waAccountId for legacy FK - get or create bridge account
-      let bridgeAccount = await prisma.whatsAppAccount.findUnique({
-        where: { phoneNumber: `telegram-bot-${boardId}` },
-      })
-      if (!bridgeAccount) {
-        const team = await prisma.team.findFirst()
-        if (team) {
-          bridgeAccount = await prisma.whatsAppAccount.create({
-            data: { phoneNumber: `telegram-bot-${boardId}`, teamId: team.id, status: "ACTIVE" },
-          })
-        }
-      }
 
-      conversation = await prisma.conversation.create({
+      lead = await (prisma as any).lead.create({
         data: {
-          customerPhone: chatId,
-          customerName,
-          externalId: chatId,
+          boardId,
+          name: customerName,
+          phone: chatId,
           channel: "telegram",
           source: "telegram",
-          status: "ACTIVE",
+          tags: [],
+          currentStateId: (defaultBoard as any)?.states?.[0]?.id ?? null,
+          customData: {},
+        },
+      })
+
+      conversation = await (prisma as any).conversation.create({
+        data: {
+          leadId: lead.id,
           boardId,
-          currentStateId: defaultBoard?.states?.[0]?.id ?? null,
+          channel: "telegram",
+          status: "ACTIVE",
+          externalId: chatId,
           lastMessageAt: timestamp,
-          ...(bridgeAccount ? { waAccountId: bridgeAccount.id } : {}),
         },
       })
     } else {
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { lastMessageAt: timestamp },
+      // Lead existiert — finde oder erstelle Conversation
+      conversation = await (prisma as any).conversation.findFirst({
+        where: { leadId: lead.id, channel: "telegram" },
       })
+
+      if (!conversation) {
+        conversation = await (prisma as any).conversation.create({
+          data: {
+            leadId: lead.id,
+            boardId,
+            channel: "telegram",
+            status: "ACTIVE",
+            externalId: chatId,
+            lastMessageAt: timestamp,
+          },
+        })
+      } else {
+        await (prisma as any).conversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: timestamp },
+        })
+      }
     }
 
     await prisma.message.create({
@@ -134,7 +204,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
       await enqueueJob({
         type: "process_message",
         payload: { conversationId: conversation.id, userMessage: content },
-        leadId: conversation.id,
+        leadId: lead.id,
         boardId,
       })
     }

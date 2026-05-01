@@ -8,9 +8,14 @@ export interface SendResult {
 }
 
 export async function sendMessage(conversationId: string, text: string): Promise<SendResult> {
-  const conversation = await prisma.conversation.findUnique({
+  const conversation = await (prisma as any).conversation.findUnique({
     where: { id: conversationId },
-    select: { channel: true, externalId: true, customerPhone: true, boardId: true, waAccountId: true },
+    select: {
+      channel: true,
+      externalId: true,
+      boardId: true,
+      lead: { select: { phone: true } },
+    },
   })
   if (!conversation) return { ok: false, error: "Conversation not found" }
 
@@ -31,7 +36,7 @@ export async function sendMessage(conversationId: string, text: string): Promise
     if (!token) token = process.env.TELEGRAM_BOT_TOKEN || null
     if (!token) return { ok: false, error: "No Telegram token configured" }
 
-    const chatId = conversation.externalId || conversation.customerPhone
+    const chatId = conversation.externalId || conversation.lead?.phone
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -56,15 +61,11 @@ export async function sendMessage(conversationId: string, text: string): Promise
         accessToken = decrypt(bc.waAccessToken)
       }
     }
-    // Fallback to legacy WhatsApp account
-    if (!phoneNumberId && conversation.waAccountId) {
-      const wa = await prisma.whatsAppAccount.findUnique({ where: { id: conversation.waAccountId } })
-      if (wa) {
-        phoneNumberId = wa.phoneNumber
-        accessToken = process.env.META_ACCESS_TOKEN || null
-      }
-    }
+
     if (!phoneNumberId || !accessToken) return { ok: false, error: "WhatsApp not configured" }
+
+    // For channel-switched conversations, externalId holds the WA phone; otherwise fall back to lead.phone
+    const recipient = conversation.externalId || (conversation.lead?.phone ?? "")
 
     const res = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
       method: "POST",
@@ -72,7 +73,7 @@ export async function sendMessage(conversationId: string, text: string): Promise
       body: JSON.stringify({
         messaging_product: "whatsapp",
         recipient_type: "individual",
-        to: conversation.customerPhone,
+        to: recipient,
         type: "text",
         text: { body: text },
       }),
