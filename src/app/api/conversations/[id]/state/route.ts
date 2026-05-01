@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-import { assertConversationOwnership } from "@/lib/auth-helpers"
 
 /**
  * PATCH /api/conversations/[id]/state
- * Update conversation state with history tracking
+ * Update lead state with history tracking (pipeline drag)
  * Body: { stateId, source?: 'manual' | 'auto' | 'api' }
  */
 
@@ -26,48 +25,54 @@ export async function PATCH(
       return NextResponse.json({ error: "stateId is required" }, { status: 400 })
     }
 
-    // Get current conversation — prüft gleichzeitig Board-Mitgliedschaft
-    const conversation = await prisma.conversation.findFirst({
+    // Get conversation with lead — prüft gleichzeitig Board-Mitgliedschaft
+    const conversation = await (prisma as any).conversation.findFirst({
       where: {
         id: params.id,
         board: { members: { some: { userId: session.user.id } } },
       },
-      include: { currentState: true },
+      include: {
+        lead: {
+          include: { currentState: true },
+        },
+      },
     })
 
-    if (!conversation) {
+    if (!conversation || !conversation.lead) {
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
     }
 
+    const lead = conversation.lead
+
     // Build state history entry
     const historyEntry = {
-      fromStateId: conversation.currentStateId,
-      fromStateName: conversation.currentState?.name || null,
+      fromStateId: lead.currentStateId,
+      fromStateName: lead.currentState?.name || null,
       toStateId: stateId,
       timestamp: new Date().toISOString(),
       source,
     }
 
-    const existingHistory = Array.isArray(conversation.stateHistory) ? conversation.stateHistory : []
+    const existingHistory = Array.isArray(lead.stateHistory) ? lead.stateHistory : []
 
-    const updatedConversation = await prisma.conversation.update({
-      where: { id: params.id },
+    // Update lead.currentStateId + lead.stateHistory (Pipeline-State)
+    const updatedLead = await (prisma as any).lead.update({
+      where: { id: lead.id },
       data: {
         currentStateId: stateId,
         stateHistory: [...existingHistory, historyEntry],
       },
-      include: {
-        currentState: true,
-        messages: {
-          orderBy: { timestamp: "desc" },
-          take: 1,
-        },
-      },
     })
 
-    return NextResponse.json({ conversation: updatedConversation })
+    // Optional: auch conversation.currentStateId syncen für AI-Engine
+    await (prisma as any).conversation.update({
+      where: { id: params.id },
+      data: { currentStateId: stateId },
+    })
+
+    return NextResponse.json({ lead: updatedLead })
   } catch (error) {
-    console.error("❌ State update error:", error)
+    console.error("State update error:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

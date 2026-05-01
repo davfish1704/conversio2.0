@@ -4,7 +4,6 @@ export interface ConversationWithState {
   id: string
   boardId: string | null
   currentStateId: string | null
-  customerPhone: string
 }
 
 /**
@@ -85,16 +84,24 @@ export async function checkStateTransition(
 }
 
 /**
- * Transition conversation to a new state
+ * Transition conversation (and its lead) to a new state
  */
 export async function transitionState(conversationId: string, newStateId: string) {
-  const conversation = await prisma.conversation.update({
+  const conversation = await (prisma as any).conversation.update({
     where: { id: conversationId },
     data: { currentStateId: newStateId },
     include: { currentState: true },
   })
 
-  console.log(`🔄 State transition: ${conversationId} → ${conversation.currentState?.name || newStateId}`)
+  // Update lead.currentStateId (Pipeline-State)
+  if (conversation.leadId) {
+    await (prisma as any).lead.update({
+      where: { id: conversation.leadId },
+      data: { currentStateId: newStateId },
+    })
+  }
+
+  console.log(`State transition: ${conversationId} -> ${conversation.currentState?.name || newStateId}`)
 
   // Log the transition
   await prisma.executionLog.create({

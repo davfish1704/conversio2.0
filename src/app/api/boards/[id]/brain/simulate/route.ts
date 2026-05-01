@@ -44,8 +44,6 @@ export async function POST(
   const loopCtx: AgentLoopContext = {
     conversationId: `simulate-${params.id}`,
     boardId: params.id,
-    waAccountId: "simulate",
-    customerPhone: "simulate",
     channel: "whatsapp",
     userMessage: message || "Hello",
     brain: brainConfig as any,
@@ -59,7 +57,6 @@ export async function POST(
       dataToCollect: [],
       completionRule: null,
     },
-    collectedFields: [],
     customData: {},
     assets,
   }

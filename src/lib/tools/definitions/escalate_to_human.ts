@@ -46,13 +46,14 @@ export const escalateToHumanTool: Tool = {
     }
 
     try {
-      // Create admin notification
-      await prisma.adminNotification.create({
+      // v3: AdminNotification → AdminReport
+      await (prisma as any).adminReport.create({
         data: {
           boardId: board.id,
-          conversationId: conversation.id,
-          type: `escalation_${reason}`,
+          type: "MANUAL_INTERVENTION",
           message: `[${urgency.toUpperCase()}] ${summary}`,
+          details: `conversationId: ${conversation.id}, reason: ${reason}`,
+          status: "OPEN",
         },
       })
 

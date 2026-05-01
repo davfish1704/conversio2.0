@@ -103,7 +103,7 @@ export default function PromptGenerator({ boardId, existingStatesCount, onApply 
     }
   }
 
-  const useExample = (example: string) => {
+  const applyExample = (example: string) => {
     setPrompt(example)
     setPreviewStates(null)
     setError(null)
@@ -148,7 +148,7 @@ export default function PromptGenerator({ boardId, existingStatesCount, onApply 
           {EXAMPLE_PROMPTS.map((example, i) => (
             <button
               key={i}
-              onClick={() => useExample(example)}
+              onClick={() => applyExample(example)}
               disabled={isGenerating || isSaving}
               className="text-xs text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg px-2.5 py-1.5 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition disabled:opacity-50"
             >
@@ -245,7 +245,7 @@ export default function PromptGenerator({ boardId, existingStatesCount, onApply 
                   )}
                   {state.config && state.type === "MESSAGE" && state.config.text && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1 italic">
-                      "{state.config.text}"
+                      &quot;{state.config.text}&quot;
                     </p>
                   )}
                 </div>

@@ -39,28 +39,37 @@ export const updateLeadDataTool: Tool = {
     }
 
     try {
-      const existing = await prisma.conversation.findUnique({
+      // Hole leadId aus Conversation
+      const conv = await (prisma as any).conversation.findUnique({
         where: { id: conversation.id },
-        select: { customData: true, collectedFields: true },
+        select: { leadId: true },
       })
 
-      const customData = ((existing?.customData ?? {}) as Record<string, unknown>)
-      const collectedFields = ((existing?.collectedFields ?? []) as string[])
+      const leadId = conv?.leadId
+      if (!leadId) {
+        return { success: false, error: "Lead für diese Conversation nicht gefunden" }
+      }
+
+      const lead = await (prisma as any).lead.findUnique({
+        where: { id: leadId },
+        select: { customData: true },
+      })
+
+      const customData = ((lead?.customData ?? {}) as Record<string, unknown>)
 
       for (const [key, value] of Object.entries(fields)) {
         customData[key] = value
-        // Also upsert into ConversationMemory for history
-        await prisma.conversationMemory.upsert({
-          where: { conversationId_key: { conversationId: conversation.id, key } },
+        // Upsert into LeadMemory for history
+        await (prisma as any).leadMemory.upsert({
+          where: { leadId_key: { leadId, key } },
           update: { value: String(value) },
-          create: { conversationId: conversation.id, key, value: String(value) },
+          create: { leadId, key, value: String(value) },
         })
-        if (!collectedFields.includes(key)) collectedFields.push(key)
       }
 
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { customData: customData as never, collectedFields: collectedFields as never },
+      await (prisma as any).lead.update({
+        where: { id: leadId },
+        data: { customData: customData },
       })
 
       return { success: true, data: { stored: Object.keys(fields) } }

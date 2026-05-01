@@ -4,7 +4,7 @@ import { auth } from "@/auth"
 
 /**
  * GET /api/boards/[id]/pipeline
- * Returns board with states and their assigned conversations (leads)
+ * Returns board with states and their assigned leads (CRM-Kontakte)
  */
 
 export async function GET(
@@ -18,7 +18,7 @@ export async function GET(
 
   try {
     // Verify user has access to this board
-    const board = await prisma.board.findFirst({
+    const board = await (prisma as any).board.findFirst({
       where: {
         id: params.id,
         members: { some: { userId: session.user.id } },
@@ -27,19 +27,22 @@ export async function GET(
         states: {
           orderBy: { orderIndex: "asc" },
           include: {
-            conversations: {
-              where: { status: "ACTIVE" },
-              orderBy: { lastMessageAt: "desc" },
+            leads: {
+              orderBy: { updatedAt: "desc" },
               take: 100,
               include: {
-                messages: {
-                  orderBy: { timestamp: "desc" },
+                conversations: {
+                  orderBy: { lastMessageAt: "desc" },
                   take: 1,
                   select: {
                     id: true,
-                    content: true,
-                    direction: true,
-                    timestamp: true,
+                    lastMessageAt: true,
+                    channel: true,
+                    messages: {
+                      orderBy: { timestamp: "desc" },
+                      take: 1,
+                      select: { id: true, content: true, direction: true, timestamp: true },
+                    },
                   },
                 },
               },
@@ -53,28 +56,53 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    // Also get unassigned conversations (leads without current state)
-    const unassignedLeads = await prisma.conversation.findMany({
+    // Also get unassigned leads (leads without current state)
+    const unassignedLeads = await (prisma as any).lead.findMany({
       where: {
         boardId: params.id,
         currentStateId: null,
-        status: "ACTIVE",
       },
-      orderBy: { lastMessageAt: "desc" },
+      orderBy: { updatedAt: "desc" },
       take: 100,
       include: {
-        messages: {
-          orderBy: { timestamp: "desc" },
+        conversations: {
+          orderBy: { lastMessageAt: "desc" },
           take: 1,
           select: {
             id: true,
-            content: true,
-            direction: true,
-            timestamp: true,
+            lastMessageAt: true,
+            channel: true,
+            messages: {
+              orderBy: { timestamp: "desc" },
+              take: 1,
+              select: { id: true, content: true, direction: true, timestamp: true },
+            },
           },
         },
       },
     })
+
+    const mapLead = (lead: any) => {
+      const latestConv = lead.conversations?.[0]
+      return {
+        id: lead.id,
+        name: lead.name,
+        phone: lead.phone,
+        avatar: lead.avatar,
+        leadScore: lead.leadScore,
+        source: lead.source,
+        channel: lead.channel || latestConv?.channel,
+        tags: lead.tags,
+        customData: lead.customData,
+        stateHistory: lead.stateHistory,
+        currentStateId: lead.currentStateId,
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt,
+        lastMessageAt: latestConv?.lastMessageAt,
+        lastMessage: latestConv?.messages?.[0] || null,
+        conversationId: latestConv?.id || null,
+      }
+    }
 
     return NextResponse.json({
       board: {
@@ -83,37 +111,17 @@ export async function GET(
         description: board.description,
         isActive: board.isActive,
       },
-      states: board.states.map((state) => ({
+      states: board.states.map((state: any) => ({
         id: state.id,
         name: state.name,
         orderIndex: state.orderIndex,
         type: state.type,
-        leads: state.conversations.map((conv) => ({
-          id: conv.id,
-          customerName: conv.customerName,
-          customerPhone: conv.customerPhone,
-          leadScore: conv.leadScore,
-          status: conv.status,
-          source: conv.source,
-          createdAt: conv.createdAt,
-          lastMessageAt: conv.lastMessageAt,
-          lastMessage: conv.messages[0] || null,
-        })),
+        leads: state.leads.map(mapLead),
       })),
-      unassignedLeads: unassignedLeads.map((conv) => ({
-        id: conv.id,
-        customerName: conv.customerName,
-        customerPhone: conv.customerPhone,
-        leadScore: conv.leadScore,
-        status: conv.status,
-        source: conv.source,
-        createdAt: conv.createdAt,
-        lastMessageAt: conv.lastMessageAt,
-        lastMessage: conv.messages[0] || null,
-      })),
+      unassignedLeads: unassignedLeads.map(mapLead),
     })
   } catch (error) {
-    console.error("❌ Pipeline API error:", error)
+    console.error("Pipeline API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

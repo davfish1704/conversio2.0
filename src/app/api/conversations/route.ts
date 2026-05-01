@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
         },
         currentState: true,
         board: { select: { id: true, name: true } },
-      },
+      } as any,
       orderBy: { lastMessageAt: "desc" },
       take: limit,
     })

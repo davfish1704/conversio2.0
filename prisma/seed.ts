@@ -1,4 +1,5 @@
-import { PrismaClient, Direction, MessageType, MessageStatus, WhatsAppStatus, ConversationStatus, Role } from '@prisma/client'
+import { PrismaClient, Direction, MessageType, MessageStatus, ConversationStatus, Role } from '@prisma/client'
+// Note: WhatsAppAccount, Workflow, and WhatsAppStatus no longer exist in v3 schema
 
 const prisma = new PrismaClient()
 
@@ -11,12 +12,12 @@ async function main() {
   await prisma.message.deleteMany({ where: { content: { startsWith: 'Können Sie' } } })
   await prisma.message.deleteMany({ where: { content: { startsWith: 'Ja, die' } } })
   await prisma.message.deleteMany({ where: { content: { startsWith: 'Nein,' } } })
-  await prisma.conversation.deleteMany({ where: { customerPhone: { startsWith: '+49 157' } } })
-  await prisma.conversation.deleteMany({ where: { customerPhone: { startsWith: '+49 170' } } })
-  await prisma.conversation.deleteMany({ where: { customerPhone: { startsWith: '+49 171' } } })
-  await prisma.conversation.deleteMany({ where: { customerPhone: { startsWith: '+49 172' } } })
-  await prisma.whatsAppAccount.deleteMany({ where: { phoneNumber: '+49 157 31329868' } })
-  await prisma.workflow.deleteMany({ where: { name: 'Willkommenssequenz' } })
+  // v3: Leads hold the phone numbers now; conversations link via leadId
+  await (prisma as any).lead.deleteMany({ where: { phone: { startsWith: '+49 157' } } })
+  await (prisma as any).lead.deleteMany({ where: { phone: { startsWith: '+49 170' } } })
+  await (prisma as any).lead.deleteMany({ where: { phone: { startsWith: '+49 171' } } })
+  await (prisma as any).lead.deleteMany({ where: { phone: { startsWith: '+49 172' } } })
+  // WhatsAppAccount and Workflow no longer exist in v3 schema
   await prisma.teamMember.deleteMany({ where: { user: { email: 'max@schmidt-versicherung.de' } } })
   await prisma.team.deleteMany({ where: { slug: 'schmidt-versicherung' } })
   await prisma.user.deleteMany({ where: { email: 'max@schmidt-versicherung.de' } })
@@ -53,19 +54,21 @@ async function main() {
   })
   console.log('🤝 Owner als Admin zum Team hinzugefügt')
 
-  // 4. WhatsApp Account
-  const waAccount = await prisma.whatsAppAccount.create({
+  // 4. Board erstellen (v3: kein WhatsAppAccount mehr, WA-Config kommt über BoardChannel)
+  const board = await (prisma as any).board.create({
     data: {
+      name: 'Versicherungs-Pipeline',
+      slug: 'versicherungs-pipeline',
       teamId: team.id,
-      phoneNumber: '+49 157 31329868',
-      wabaId: 'waba_123456789',
-      status: WhatsAppStatus.ACTIVE,
-      webhookUrl: 'https://conversio.app/api/webhooks/whatsapp',
+      isActive: true,
+      members: {
+        create: { userId: owner.id, role: 'ADMIN' },
+      },
     },
   })
-  console.log('📱 WhatsApp Account erstellt:', waAccount.phoneNumber)
+  console.log('📋 Board erstellt:', board.name)
 
-  // 5. Conversations mit Kunden
+  // 5. Leads + Conversations (v3: Lead ist der CRM-Kontakt, Conversation ist der Messaging-Thread)
   const customers = [
     { name: 'Anna Müller', phone: '+49 170 1234567' },
     { name: 'Thomas Weber', phone: '+49 171 7654321' },
@@ -73,15 +76,29 @@ async function main() {
   ]
 
   for (const customer of customers) {
-    const conversation = await prisma.conversation.create({
+    // Lead erstellen
+    const lead = await (prisma as any).lead.create({
       data: {
-        waAccountId: waAccount.id,
-        customerPhone: customer.phone,
-        customerName: customer.name,
+        boardId: board.id,
+        name: customer.name,
+        phone: customer.phone,
+        source: 'whatsapp',
+        channel: 'whatsapp',
+        tags: [],
+        customData: {},
+      },
+    })
+
+    // Conversation für diesen Lead erstellen
+    const conversation = await (prisma as any).conversation.create({
+      data: {
+        leadId: lead.id,
+        boardId: board.id,
+        channel: 'whatsapp',
         status: ConversationStatus.ACTIVE,
       },
     })
-    console.log('💬 Conversation erstellt:', customer.name)
+    console.log('💬 Lead + Conversation erstellt:', customer.name)
 
     // 6. Messages für jede Conversation
     const messages = [
@@ -119,7 +136,6 @@ async function main() {
       },
     ]
 
-    // Für jede Conversation nur 3-5 Messages, wir nehmen alle 5
     for (const msg of messages) {
       await prisma.message.create({
         data: {
@@ -135,24 +151,9 @@ async function main() {
     console.log('✉️ 5 Messages erstellt für:', customer.name)
   }
 
-  // 7. Workflow
-  const workflow = await prisma.workflow.create({
-    data: {
-      teamId: team.id,
-      name: 'Willkommenssequenz',
-      triggerType: 'new_conversation',
-      isActive: true,
-      config: {
-        steps: [
-          { type: 'delay', value: 5, unit: 'minutes' },
-          { type: 'send_message', template: 'welcome_message_1' },
-          { type: 'delay', value: 24, unit: 'hours' },
-          { type: 'send_message', template: 'follow_up_1' },
-        ],
-      },
-    },
-  })
-  console.log('⚙️ Workflow erstellt:', workflow.name)
+  // 7. Workflow-Äquivalent: In v3 gibt es kein Workflow-Modell mehr.
+  // Automation wird über Board-States und AI-Flows abgebildet.
+  console.log('ℹ️  Workflow-Seeding übersprungen (v3: kein Workflow-Modell)')
 
   console.log('✅ Seeding erfolgreich abgeschlossen!')
 }

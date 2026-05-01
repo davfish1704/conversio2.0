@@ -6,14 +6,14 @@ import { LanguageContext } from "@/lib/LanguageContext"
 
 export interface Lead {
   id: string
-  customerName: string | null
-  customerPhone: string
-  customerAvatar: string | null
+  name: string | null
+  phone: string | null
+  avatar: string | null
   leadScore: number | null
-  status: string
+  status?: string
   source: string | null
   tags: string[]
-  customFields: Record<string, unknown> | null
+  customData: Record<string, unknown> | null
   stateHistory: unknown
   lastMessageAt: string
   createdAt: string
@@ -23,8 +23,8 @@ export interface Lead {
   channel?: string
   frozen?: boolean
   aiEnabled?: boolean
-  aiModel?: string | null
   notes?: string | null
+  conversationId?: string | null
 }
 
 interface StateOption {
@@ -127,15 +127,15 @@ export default function LeadCard({ lead, states, onStateChange, onClick, isDragg
         <div className="flex items-start gap-2.5">
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(
-              lead.customerPhone
+              lead.phone || lead.id
             )}`}
           >
-            {getInitials(lead.customerName)}
+            {getInitials(lead.name)}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                {lead.customerName || t("crm.unknown")}
+                {lead.name || t("crm.unknown")}
               </p>
               {lead.channel === "whatsapp" && (
                 <svg className="w-3 h-3 text-green-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -153,7 +153,7 @@ export default function LeadCard({ lead, states, onStateChange, onClick, isDragg
                 </svg>
               )}
             </div>
-            <p className="text-xs text-gray-500">{formatPhone(lead.customerPhone)}</p>
+            <p className="text-xs text-gray-500">{formatPhone(lead.phone || "")}</p>
           </div>
           {lead.leadScore ? (
             <span

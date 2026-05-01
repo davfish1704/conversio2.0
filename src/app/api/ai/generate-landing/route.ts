@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { rateLimit } from "@/lib/rate-limit"
-import { groqChat } from "@/lib/ai/groq-client"
+import { aiRegistry } from "@/lib/ai/registry"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -76,25 +76,26 @@ Response format:
   ...
 ]`
 
-    const result = await groqChat(
-      [
+    const response = await aiRegistry.execute({
+      boardId: "global",
+      purpose: "main",
+      messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt.trim() },
       ],
-      "llama-3.1-8b-instant",
-      0.7,
-      4000
-    )
+      temperature: 0.7,
+      maxTokens: 4000,
+    })
 
     let sections
     try {
-      const cleaned = result.content.replace(/^```json\s*|\s*```$/g, "").trim()
+      const cleaned = response.content.replace(/^```json\s*|\s*```$/g, "").trim()
       sections = JSON.parse(cleaned)
       if (!Array.isArray(sections)) {
         throw new Error("Response is not an array")
       }
     } catch (parseErr) {
-      console.error("Failed to parse AI response:", parseErr, "Content:", result.content)
+      console.error("Failed to parse AI response:", parseErr, "Content:", response.content)
       return NextResponse.json(
         { error: "Failed to parse AI response. Please try again." },
         { status: 500 }
@@ -104,7 +105,11 @@ Response format:
     return NextResponse.json({
       success: true,
       sections,
-      usage: result.usage,
+      usage: {
+        prompt_tokens: response.usage.inputTokens,
+        completion_tokens: response.usage.outputTokens,
+        total_tokens: response.usage.totalTokens,
+      },
     })
   } catch (error) {
     console.error("AI Landing Generation Error:", error)

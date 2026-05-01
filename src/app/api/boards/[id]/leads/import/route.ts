@@ -44,30 +44,6 @@ export async function POST(
       return NextResponse.json({ error: "CSV is empty or invalid" }, { status: 400 })
     }
 
-    // Get board and WA account
-    const board = await prisma.board.findUnique({
-      where: { id: params.id },
-      select: { teamId: true },
-    })
-
-    if (!board) {
-      return NextResponse.json({ error: "Board not found" }, { status: 404 })
-    }
-
-    let waAccount = await prisma.whatsAppAccount.findFirst({
-      where: { teamId: board.teamId },
-    })
-
-    if (!waAccount) {
-      waAccount = await prisma.whatsAppAccount.create({
-        data: {
-          teamId: board.teamId,
-          phoneNumber: "placeholder",
-          status: "ACTIVE",
-        },
-      })
-    }
-
     const firstState = await prisma.state.findFirst({
       where: { boardId: params.id },
       orderBy: { orderIndex: "asc" },
@@ -90,36 +66,42 @@ export async function POST(
 
         const normalizedPhone = phone.startsWith("+") ? phone : `+${phone}`
 
-        // Check if exists
-        const existing = await prisma.conversation.findFirst({
-          where: {
-            customerPhone: normalizedPhone,
-            waAccountId: waAccount.id,
-          },
+        // Dedup nach phone + boardId
+        const existingLead = await (prisma as any).lead.findFirst({
+          where: { boardId: params.id, phone: normalizedPhone },
         })
 
-        if (existing) {
+        if (existingLead) {
           // Update
-          await prisma.conversation.update({
-            where: { id: existing.id },
+          await (prisma as any).lead.update({
+            where: { id: existingLead.id },
             data: {
-              boardId: params.id,
-              currentStateId: firstState?.id || existing.currentStateId,
-              customerName: name || existing.customerName,
+              currentStateId: firstState?.id || existingLead.currentStateId,
+              name: name || existingLead.name,
               tags,
               source: "csv_import",
             },
           })
         } else {
-          await prisma.conversation.create({
+          const lead = await (prisma as any).lead.create({
             data: {
-              customerPhone: normalizedPhone,
-              customerName: name || normalizedPhone,
-              waAccountId: waAccount.id,
               boardId: params.id,
-              currentStateId: firstState?.id || null,
+              phone: normalizedPhone,
+              name: name || normalizedPhone,
+              email: email || null,
               source: "csv_import",
+              channel: "manual",
               tags,
+              currentStateId: firstState?.id || null,
+              customData: email ? { email } : {},
+            },
+          })
+          // Leere Conversation anlegen
+          await (prisma as any).conversation.create({
+            data: {
+              leadId: lead.id,
+              boardId: params.id,
+              channel: "manual",
               status: "ACTIVE",
             },
           })
@@ -134,7 +116,7 @@ export async function POST(
 
     return NextResponse.json(results)
   } catch (error) {
-    console.error("❌ Import API error:", error)
+    console.error("Import API error:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }

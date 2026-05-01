@@ -6,8 +6,9 @@ export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const notifications = await prisma.adminNotification.findMany({
-    where: { resolved: false },
+  // v3: AdminNotification → AdminReport (status OPEN = unresolved)
+  const notifications = await (prisma as any).adminReport.findMany({
+    where: { status: "OPEN" },
     orderBy: { createdAt: "desc" },
     take: 50,
   })
@@ -18,6 +19,7 @@ export async function PATCH(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const { id } = await req.json()
-  await prisma.adminNotification.update({ where: { id }, data: { resolved: true } })
+  // v3: resolve → set status RESOLVED
+  await (prisma as any).adminReport.update({ where: { id }, data: { status: "RESOLVED", resolvedAt: new Date() } })
   return NextResponse.json({ ok: true })
 }

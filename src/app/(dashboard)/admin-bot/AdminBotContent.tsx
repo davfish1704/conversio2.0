@@ -188,7 +188,7 @@ export default function AdminBotContent() {
         {filteredReports.length === 0 ? (
           <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-gray-200">
             <p className="text-gray-500 dark:text-gray-400 mb-2">Noch keine Reports vorhanden.</p>
-            <p className="text-sm text-gray-400">Klicke auf "Probleme scannen", um deine Gespräche zu prüfen.</p>
+            <p className="text-sm text-gray-400">Klicke auf &quot;Probleme scannen&quot;, um deine Gespräche zu prüfen.</p>
           </div>
         ) : (
           filteredReports.map((report) => {

@@ -5,7 +5,10 @@ import { prisma } from "@/lib/db"
 import { aiRegistry } from "@/lib/ai/registry"
 import type { AIMessage } from "@/lib/ai/providers/types"
 import { transitionState } from "@/lib/state-machine"
-import type { BoardBrain, BoardAsset, ConversationMemory } from "@prisma/client"
+import type { BoardBrain, BoardAsset } from "@prisma/client"
+
+// V3 type — not yet in generated client
+type LeadMemory = { key: string; value: string }
 
 // Lazy import to avoid circular deps — tools/index seeds the registry on first import
 let toolsReady = false
@@ -21,8 +24,6 @@ async function ensureToolsRegistered() {
 export interface AgentLoopContext {
   conversationId: string
   boardId: string
-  waAccountId: string
-  customerPhone: string
   channel: string
   userMessage: string
   brain: BoardBrain
@@ -37,7 +38,6 @@ export interface AgentLoopContext {
     completionRule?: string | null
     availableTools?: string[]
   }
-  collectedFields?: string[]
   customData?: Record<string, unknown>
   assets: BoardAsset[]
 }
@@ -86,37 +86,32 @@ export async function runAgentLoop(
     prisma.state.findUnique({ where: { id: ctx.state.id } }),
   ])
 
-  // Determine which tools this state exposes to the AI
-  const availableToolNames: string[] =
-    (ctx.state.availableTools?.length
+  // Determine which tools this state exposes to the AI; fall back to defaults for unconfigured states
+  const rawToolNames: string[] =
+    ctx.state.availableTools?.length
       ? ctx.state.availableTools
-      : (state?.availableTools as string[] | null) ?? [])
+      : (state?.availableTools as string[] | null) ?? []
 
-  // If the state has no availableTools configured, fall back to the Phase-1 set
-  // so existing boards continue to work unchanged
-  const useLegacyTools = availableToolNames.length === 0
+  const { getToolDefinitions, DEFAULT_AI_STATE_TOOLS } = await import("@/lib/tools/index")
+  const availableToolNames = rawToolNames.length > 0 ? rawToolNames : DEFAULT_AI_STATE_TOOLS
+  const toolDefinitions = getToolDefinitions(availableToolNames)
 
-  let toolDefinitions: import("@/lib/ai/providers/types").ToolDefinition[]
-  if (useLegacyTools) {
-    // Use the old hardcoded tool definitions from tools.ts
-    const { TOOL_DEFINITIONS } = await import("@/lib/ai/tools")
-    toolDefinitions = TOOL_DEFINITIONS
-  } else {
-    const { getToolDefinitions } = await import("@/lib/tools/index")
-    toolDefinitions = getToolDefinitions(availableToolNames)
-  }
+  // Lade leadId für Memory-Abfrage
+  const convForMemory = await (prisma as any).conversation.findUnique({
+    where: { id: ctx.conversationId },
+    select: { leadId: true, conversationSummary: true },
+  })
 
-  const [memories, convSummaryRow] = await Promise.all([
-    prisma.conversationMemory.findMany({
-      where: { conversationId: ctx.conversationId },
-      orderBy: { createdAt: "asc" },
-      select: { key: true, value: true },
-    }),
-    prisma.conversation.findUnique({
-      where: { id: ctx.conversationId },
-      select: { conversationSummary: true },
-    }),
+  const [memories] = await Promise.all([
+    convForMemory?.leadId
+      ? (prisma as any).leadMemory.findMany({
+          where: { leadId: convForMemory.leadId },
+          orderBy: { createdAt: "asc" },
+          select: { key: true, value: true },
+        })
+      : Promise.resolve([]),
   ])
+  const convSummaryRow = convForMemory
 
   const contextWindowSize = (board as { contextWindowSize?: number } | null)?.contextWindowSize ?? 20
   const systemPrompt = buildSystemPrompt(ctx, memories, convSummaryRow?.conversationSummary ?? null)
@@ -199,26 +194,11 @@ export async function runAgentLoop(
         tool_calls: response.toolCalls,
       })
 
-      if (useLegacyTools || !conversation || !board || !state) {
-        // Legacy path: use old executeTool dispatcher
-        const { executeTool } = await import("@/lib/ai/tools")
-        const legacyCtx = {
-          conversationId: ctx.conversationId,
-          boardId: ctx.boardId,
-          waAccountId: ctx.waAccountId,
-          customerPhone: ctx.customerPhone,
-          channel: ctx.channel,
-          simulate,
-          sentMessages: result.sentMessages,
-          stateTransitions: result.stateTransitions,
-          dataToCollect: ctx.state.dataToCollect ?? [],
-        }
+      if (!conversation || !board || !state) {
         for (const tc of response.toolCalls) {
-          const toolResult = await executeTool(tc.name, tc.arguments, legacyCtx)
-          messages.push({ role: "tool", tool_call_id: tc.id, content: toolResult })
+          messages.push({ role: "tool", tool_call_id: tc.id, content: "FEHLER: Konversation/Board/State nicht geladen" })
         }
       } else {
-        // New path: use typed executor with ToolCallLog
         const { executeToolCalls } = await import("@/lib/tools/executor")
         const executed = await executeToolCalls({
           toolCalls: response.toolCalls,
@@ -231,14 +211,9 @@ export async function runAgentLoop(
         for (const exec of executed) {
           messages.push({ role: "tool", tool_call_id: exec.tool_call_id, content: exec.resultText })
 
-          // Track state transitions triggered by tools
           if (exec.result.success && exec.toolName === "advance_state") {
             const targetName = (exec.result.data as { targetState?: string })?.targetState
             if (targetName) result.stateTransitions.push(targetName)
-          }
-          // Track sent messages from send_text legacy tool
-          if (exec.result.success && exec.toolName === "send_text") {
-            // Already sent by the tool; don't double-push but track in sentMessages
           }
         }
       }
@@ -267,7 +242,7 @@ export async function runAgentLoop(
     }
   }
 
-  // completionRule: all_collected → auto-transition
+  // completionRule: all_collected → auto-transition via lead memory check
   if (
     !simulate &&
     ctx.state.completionRule === "all_collected" &&
@@ -275,16 +250,22 @@ export async function runAgentLoop(
     (ctx.state.dataToCollect?.length ?? 0) > 0 &&
     !result.stateTransitions.includes(ctx.state.nextStateId)
   ) {
-    const conv = await prisma.conversation.findUnique({
+    const convForCheck = await (prisma as any).conversation.findUnique({
       where: { id: ctx.conversationId },
-      select: { collectedFields: true },
+      select: { leadId: true },
     })
-    const latestCollected = ((conv?.collectedFields ?? []) as string[])
-    const allCollected = ctx.state.dataToCollect!.every((f) => latestCollected.includes(f))
-    if (allCollected) {
-      await transitionState(ctx.conversationId, ctx.state.nextStateId)
-      result.stateTransitions.push(ctx.state.nextStateId)
-      console.log(`✅ completionRule=all_collected → transitioned to ${ctx.state.nextStateId}`)
+    if (convForCheck?.leadId) {
+      const leadMemories = await (prisma as any).leadMemory.findMany({
+        where: { leadId: convForCheck.leadId },
+        select: { key: true },
+      })
+      const collectedKeys = (leadMemories as any[]).map((m: any) => m.key)
+      const allCollected = ctx.state.dataToCollect!.every((f) => collectedKeys.includes(f))
+      if (allCollected) {
+        await transitionState(ctx.conversationId, ctx.state.nextStateId)
+        result.stateTransitions.push(ctx.state.nextStateId)
+        console.log(`completionRule=all_collected -> transitioned to ${ctx.state.nextStateId}`)
+      }
     }
   }
 
@@ -295,7 +276,7 @@ export async function runAgentLoop(
 
 function buildSystemPrompt(
   ctx: AgentLoopContext,
-  memories: Pick<ConversationMemory, "key" | "value">[],
+  memories: Pick<LeadMemory, "key" | "value">[],
   conversationSummary: string | null = null
 ): string {
   const parts: string[] = []
@@ -319,8 +300,8 @@ function buildSystemPrompt(
 
   const dataToCollect = ctx.state.dataToCollect ?? []
   if (dataToCollect.length > 0) {
-    const alreadyCollected = ctx.collectedFields ?? []
-    const needed = dataToCollect.filter((k) => !alreadyCollected.includes(k))
+    const collectedFromMemory = memories.map((m) => m.key)
+    const needed = dataToCollect.filter((k) => !collectedFromMemory.includes(k))
     if (needed.length > 0) {
       parts.push(
         `NOCH ZU SAMMELN: ${needed.join(", ")}\nNutze update_lead_data um diese Werte zu speichern sobald der Kunde sie nennt.`

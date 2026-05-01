@@ -10,7 +10,7 @@ export async function GET(
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const lead = await prisma.conversation.findUnique({
+  const lead = await (prisma as any).lead.findUnique({
     where: { id: params.leadId },
     select: { boardId: true },
   })

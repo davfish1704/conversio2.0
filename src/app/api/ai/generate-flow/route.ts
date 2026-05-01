@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { generateFlowStates } from "@/lib/ai/groq-client"
+import { aiRegistry } from "@/lib/ai/registry"
 
 interface GeneratedState {
   name: string
@@ -38,8 +38,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const content = await generateFlowStates(prompt)
+    const response = await aiRegistry.execute({
+      boardId: "global",
+      purpose: "main",
+      messages: [
+        { role: "system", content: "You are a flow builder assistant. Respond ONLY with valid JSON array of states. No markdown." },
+        { role: "user", content: prompt.trim() },
+      ],
+    })
 
+    const content = response.content
     if (!content) {
       return NextResponse.json(
         { error: "Empty response from AI model" },

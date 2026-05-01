@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 import { rateLimit } from "@/lib/rate-limit"
+import { decrypt } from "@/lib/crypto/secrets"
 
 /**
  * WhatsApp Send API
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    
+
     // Rate Limit: 30 WhatsApp-Nachrichten pro Minute pro User
     const limit = rateLimit(`whatsapp:${session.user.id}`, 30, 60000)
     if (!limit.success) {
@@ -33,38 +34,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields: to, message" }, { status: 400 })
     }
 
-    // Resolve phone number ID
+    // Resolve phone number ID via BoardChannel
     let phoneNumberId = explicitPhoneNumberId
+    let accessToken: string | null = null
     let resolvedConversationId = conversationId
 
     if (!phoneNumberId && conversationId) {
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
-        include: { waAccount: true },
+        select: { boardId: true },
       })
-      if (conversation?.waAccount) {
-        phoneNumberId = conversation.waAccount.phoneNumber
-      }
-    }
-
-    if (!phoneNumberId) {
-      // Fallback: use first active WhatsApp account
-      const waAccount = await prisma.whatsAppAccount.findFirst({
-        where: { status: "ACTIVE" },
-      })
-      if (waAccount) {
-        phoneNumberId = waAccount.phoneNumber
+      if (conversation?.boardId) {
+        const bc = await prisma.boardChannel.findUnique({
+          where: { boardId_platform: { boardId: conversation.boardId, platform: "whatsapp" } },
+          select: { waPhoneNumberId: true, waAccessToken: true },
+        })
+        if (bc?.waPhoneNumberId && bc.waAccessToken) {
+          phoneNumberId = bc.waPhoneNumberId
+          accessToken = decrypt(bc.waAccessToken)
+        }
       }
     }
 
     if (!phoneNumberId) {
       return NextResponse.json(
-        { error: "No WhatsApp account found. Please configure a phone number." },
+        { error: "No WhatsApp phone number configured. Please configure a BoardChannel." },
         { status: 400 }
       )
     }
 
-    const accessToken = process.env.META_ACCESS_TOKEN
+    if (!accessToken) {
+      accessToken = process.env.META_ACCESS_TOKEN || null
+    }
+
     if (!accessToken) {
       return NextResponse.json(
         { error: "META_ACCESS_TOKEN not configured" },
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest) {
     const metaData = await metaResponse.json()
 
     if (!metaResponse.ok) {
-      console.error("❌ Meta WhatsApp API error:", metaData)
+      console.error("Meta WhatsApp API error:", metaData)
       return NextResponse.json(
         { success: false, error: metaData.error?.message || "Meta API error" },
         { status: metaResponse.status }
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest) {
       dbMessageId: dbMessage?.id,
     })
   } catch (error) {
-    console.error("❌ WhatsApp send error:", error)
+    console.error("WhatsApp send error:", error)
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

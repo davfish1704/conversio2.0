@@ -46,16 +46,27 @@ export const setLeadScoreTool: Tool = {
     }
 
     try {
-      await prisma.conversation.update({
+      // Hole leadId aus Conversation
+      const conv = await (prisma as any).conversation.findUnique({
         where: { id: conversation.id },
+        select: { leadId: true },
+      })
+
+      const leadId = conv?.leadId
+      if (!leadId) {
+        return { success: false, error: "Lead für diese Conversation nicht gefunden" }
+      }
+
+      await (prisma as any).lead.update({
+        where: { id: leadId },
         data: { leadScore: Math.round(score) },
       })
 
-      // Persist reasoning in memory for future context
-      await prisma.conversationMemory.upsert({
-        where: { conversationId_key: { conversationId: conversation.id, key: "lead_score_reasoning" } },
+      // Persist reasoning in lead memory for future context
+      await (prisma as any).leadMemory.upsert({
+        where: { leadId_key: { leadId, key: "lead_score_reasoning" } },
         update: { value: `Score ${score}: ${reasoning}` },
-        create: { conversationId: conversation.id, key: "lead_score_reasoning", value: `Score ${score}: ${reasoning}` },
+        create: { leadId, key: "lead_score_reasoning", value: `Score ${score}: ${reasoning}` },
       })
 
       return { success: true, data: { score: Math.round(score), reasoning } }

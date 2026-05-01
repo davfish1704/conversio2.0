@@ -7,10 +7,10 @@ export async function processNextBatch(limit = 10): Promise<number> {
   // Atomically claim pending jobs with SELECT FOR UPDATE SKIP LOCKED
   const claimed = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "jobs"
-    SET status = 'running', "startedAt" = NOW(), attempts = attempts + 1
+    SET status = 'RUNNING'::"JobStatus", "startedAt" = NOW(), attempts = attempts + 1
     WHERE id IN (
       SELECT id FROM "jobs"
-      WHERE status = 'pending'
+      WHERE status = 'PENDING'::"JobStatus"
         AND "scheduledFor" <= ${now}
         AND attempts < "maxAttempts"
       ORDER BY "scheduledFor" ASC
@@ -33,7 +33,7 @@ export async function processNextBatch(limit = 10): Promise<number> {
         await executeJob(job.type as JobType, job.payload as JobPayload)
         await prisma.job.update({
           where: { id },
-          data: { status: "completed", completedAt: new Date() },
+          data: { status: "COMPLETED", completedAt: new Date() },
         })
         processed++
       } catch (err) {
@@ -45,7 +45,7 @@ export async function processNextBatch(limit = 10): Promise<number> {
         await prisma.job.update({
           where: { id },
           data: {
-            status: willRetry ? "pending" : "failed",
+            status: willRetry ? "PENDING" : "FAILED",
             lastError: errorMsg.slice(0, 500),
             ...(willRetry ? { scheduledFor: new Date(Date.now() + backoffMs) } : {}),
           },

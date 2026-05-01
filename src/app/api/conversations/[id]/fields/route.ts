@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-// assertConversationOwnership nicht nötig — Ownership-Check ist ins findFirst unten eingebaut
 
 /**
  * PATCH /api/conversations/[id]/fields
- * Update custom fields for a conversation
- * Body: { customFields?: Record<string, any>, customData?: Record<string, any>, fieldHistory?: Array }
- * Saves to both customFields (legacy) and customData (new dynamic fields)
+ * Update custom fields for a lead (via conversation ID)
+ * Body: { customFields?: Record<string, any>, customData?: Record<string, any> }
+ * Speichert in lead.customData
  */
 
 export async function PATCH(
@@ -29,24 +28,22 @@ export async function PATCH(
       return NextResponse.json({ error: "customFields or customData object is required" }, { status: 400 })
     }
 
-    // findFirst mit Board-Membership-Check — kombiniert Ownership-Prüfung + Datenabruf
-    const conversation = await prisma.conversation.findFirst({
+    // findFirst mit Board-Membership-Check
+    const conversation = await (prisma as any).conversation.findFirst({
       where: {
         id: params.id,
         board: { members: { some: { userId: session.user.id } } },
       },
+      include: { lead: true },
     })
 
-    if (!conversation) {
+    if (!conversation || !conversation.lead) {
       return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
     }
 
-    // Merge with existing fields
-    const existingCustomFields = (conversation.customFields as Record<string, unknown> | null) || {}
-    const existingCustomData = (conversation.customData as Record<string, unknown> | null) || {}
+    const existingCustomData = (conversation.lead.customData as Record<string, unknown> | null) || {}
 
-    const mergedCustomFields = { ...existingCustomFields, ...fieldsToUpdate }
-    const mergedCustomData = { ...existingCustomData, ...fieldsToUpdate }
+    const merged = { ...existingCustomData, ...fieldsToUpdate }
 
     // Track field changes for audit
     const changes: Array<{
@@ -67,21 +64,12 @@ export async function PATCH(
       }
     }
 
-    const updatedConversation = await prisma.conversation.update({
-      where: { id: params.id },
-      data: {
-        customFields: mergedCustomFields,
-        customData: mergedCustomData,
-      },
-      include: {
-        currentState: true,
-      },
+    const updatedLead = await (prisma as any).lead.update({
+      where: { id: conversation.lead.id },
+      data: { customData: merged },
     })
 
-    return NextResponse.json({
-      conversation: updatedConversation,
-      changes,
-    })
+    return NextResponse.json({ lead: updatedLead, changes })
   } catch (error) {
     console.error("Fields update error:", error)
     return NextResponse.json(

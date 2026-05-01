@@ -1,0 +1,675 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  name          String?
+  googleId      String?         @unique @map("google_id")
+  image         String?
+  password      String?
+  emailVerified DateTime?       @map("email_verified")
+  role          UserRole        @default(USER)
+  timezone     String?         @default("Europe/Berlin")
+  language     String?         @default("en")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  messages      Message[]       @relation("MessageAuthor")
+  memberships   TeamMember[]
+  ownedTeams    Team[]          @relation("TeamOwner")
+  boardMembers  BoardMember[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  AGENT
+}
+
+model Team {
+  id               String            @id @default(cuid())
+  name             String
+  slug             String            @unique
+  ownerId          String
+  plan             String            @default("free")
+  createdAt        DateTime          @default(now())
+  apiTokens        ApiToken[]
+  members          TeamMember[]
+  owner            User              @relation("TeamOwner", fields: [ownerId], references: [id])
+  whatsappAccounts WhatsAppAccount[]
+  workflows        Workflow[]
+  boards           Board[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  role     Role     @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model WhatsAppAccount {
+  id                   String         @id @default(cuid())
+  teamId               String
+  phoneNumber          String         @unique
+  wabaId               String?
+  status               WhatsAppStatus @default(PENDING)
+  webhookUrl           String?
+  accessTokenEncrypted String?
+  createdAt            DateTime       @default(now())
+  conversations        Conversation[]
+  team                 Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_accounts")
+}
+
+model Conversation {
+  id             String             @id @default(cuid())
+  waAccountId    String?
+  boardId        String?
+  currentStateId String?
+  customerPhone  String
+  customerName   String?
+  customerAvatar String?
+  source         String?            @default("manual")
+  tags           String[]           @default([])
+  leadScore      Int?               @default(0)
+  stateHistory   Json?
+  customFields   Json?
+  lastMessageAt  DateTime           @default(now())
+  status         ConversationStatus @default(ACTIVE)
+  frozen         Boolean        @default(false)
+  frozenAt       DateTime?
+  frozenReason   String?
+  frozenBy       String?
+  aiEnabled      Boolean        @default(true)
+  followupCount         Int       @default(0)
+  conversationSummary   String?
+  summaryUpdatedAt      DateTime?
+  messageCountSinceSum  Int       @default(0)
+  aiModel        String?        @default("llama-3.1-8b-instant")
+  channel        String         @default("whatsapp")
+  externalId     String?
+  customData     Json           @default("{}")
+  collectedFields Json          @default("[]")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now()) @updatedAt
+  waAccount      WhatsAppAccount?   @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  board          Board?             @relation(fields: [boardId], references: [id])
+  currentState   State?             @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
+  messages       Message[]
+  executionLogs  ExecutionLog[]
+  memories       ConversationMemory[]
+
+  @@index([waAccountId, lastMessageAt])
+  @@index([boardId, status, lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  authorId       String?
+  direction      Direction
+  content        String
+  mediaUrl       String?
+  messageType    MessageType   @default(TEXT)
+  status         MessageStatus @default(SENT)
+  aiGenerated    Boolean        @default(false)
+  externalId     String?
+  timestamp      DateTime      @default(now())
+  metadata       Json?
+  author         User?         @relation("MessageAuthor", fields: [authorId], references: [id])
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, timestamp])
+  @@map("messages")
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  teamId      String
+  name        String
+  triggerType String
+  config      Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("workflows")
+}
+
+model ApiToken {
+  id             String    @id @default(cuid())
+  teamId         String
+  service        String
+  encryptedToken String
+  scopes         String[]
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  team           Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("api_tokens")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum WhatsAppStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  SPAM
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  TEMPLATE
+  LOCATION
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Board {
+  id          String   @id @default(cuid())
+  teamId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  adminStatus   String   @default("active")
+  ownerStatus   String   @default("active")
+  behaviorMode  String   @default("reactive")
+  boardCustomFields Json @default("[]")
+  contextWindowSize Int  @default(20)
+
+  team         Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  states       State[]        @relation("BoardStates")
+  members      BoardMember[]
+  reports      AdminReport[]
+  brain        BoardBrain?
+  assets       BoardAsset[]
+  executionLogs ExecutionLog[]
+  brainDocuments BrainDocument[]
+  brainRules     BrainRule[]
+  brainFAQs      BrainFAQ[]
+  stageTransitions StageTransition[]
+  conversations Conversation[]
+  channels      BoardChannel[]
+  aiProviderConfig AIProviderConfig?
+
+  @@map("boards")
+}
+
+model BoardMember {
+  id       String    @id @default(cuid())
+  boardId  String
+  userId   String
+  role     BoardRole @default(AGENT)
+  joinedAt DateTime  @default(now())
+
+  board    Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, userId])
+  @@map("board_members")
+}
+
+enum BoardRole {
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+model State {
+  id             String         @id @default(cuid())
+  boardId        String
+  name           String
+  type           StateType      @default(MESSAGE)
+  mission        String?
+  rules          String?
+  orderIndex     Int            @default(0)
+  isActive       Boolean        @default(true)
+  autoTransition Boolean        @default(false)
+  nextStateId    String?
+  config         Json?
+  fieldDefinitions Json?
+  behaviorMode          String?
+  dataToCollect         Json    @default("[]")
+  completionRule        String?
+  availableTools        Json    @default("[]")
+  escalateOnNoReply     Int?
+  escalateOnLowConfidence Boolean @default(true)
+  escalateOnOffMission  Boolean @default(true)
+  maxFollowups          Int       @default(3)
+  followupAction        String    @default("escalate")
+  followupTargetState   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  board          Board          @relation("BoardStates", fields: [boardId], references: [id], onDelete: Cascade)
+  conversations  Conversation[] @relation("ConversationCurrentState")
+  transitionsFrom StageTransition[] @relation("TransitionFrom")
+  transitionsTo   StageTransition[] @relation("TransitionTo")
+
+  @@map("states")
+}
+
+enum StateType {
+  AI
+  MESSAGE
+  TEMPLATE
+  CONDITION
+  WAIT
+}
+
+model AdminReport {
+  id          String       @id @default(cuid())
+  boardId     String
+  stateId     String?
+  type        ReportType
+  message     String
+  details     String?
+  status      ReportStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+
+  board       Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@map("admin_reports")
+}
+
+enum ReportType {
+  STUCK
+  ERROR
+  MANUAL_INTERVENTION
+  LOOP
+  INFO
+}
+
+enum ReportStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
+model BoardBrain {
+  id           String   @id @default(cuid())
+  boardId      String   @unique
+  systemPrompt String   @db.Text
+  stylePrompt  String   @db.Text
+  infoPrompt   String   @db.Text
+  rulePrompt   String   @db.Text
+
+  defaultModel String   @default("dummy")
+  temperature  Float    @default(0.7)
+  maxTokens    Int      @default(500)
+
+  language     String   @default("de")
+  tone         String   @default("friendly")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  board        Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@map("board_brains")
+}
+
+model BoardAsset {
+  id          String     @id @default(cuid())
+  boardId     String
+  type        AssetType
+  name        String
+  content     String?    @db.Text
+  fileUrl     String?
+  metadata    Json?
+  isActive    Boolean    @default(true)
+  tags        String[]
+
+  createdAt   DateTime   @default(now())
+
+  board       Board      @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, type])
+  @@map("board_assets")
+}
+
+enum AssetType {
+  AUDIO_MEMO
+  PDF_DOC
+  IMAGE_ASSET
+  TEXT_SNIPPET
+  TEMPLATE
+  KNOWLEDGE_BASE
+}
+
+model ExecutionLog {
+  id             String   @id @default(cuid())
+  boardId        String
+  conversationId String
+  stateId        String?
+
+  action         String
+  input          String?  @db.Text
+  output         String?  @db.Text
+  context        Json?
+
+  status         ExecutionStatus @default(SUCCESS)
+  errorMessage   String?
+  stuckDuration  Int?
+  needsAttention Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+
+  board          Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([boardId, status, createdAt])
+  @@map("execution_logs")
+}
+
+enum ExecutionStatus {
+  SUCCESS
+  ERROR
+  STUCK
+  WAITING_USER
+  MANUAL_INTERVENTION
+  LOOP
+}
+
+
+// ============================================
+// BRAINLAB EXTENSION (Baustein 1)
+// ============================================
+
+model BrainDocument {
+  id          String   @id @default(cuid())
+  boardId     String
+  name        String
+  content     String   @db.Text
+  category    String   @default("general")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, category])
+  @@map("brain_documents")
+}
+
+model BrainRule {
+  id          String   @id @default(cuid())
+  boardId     String
+  name        String
+  rule        String   @db.Text
+  severity    String   @default("warning")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@map("brain_rules")
+}
+
+model BrainFAQ {
+  id          String   @id @default(cuid())
+  boardId     String
+  question    String
+  answer      String   @db.Text
+  category    String?
+  createdAt   DateTime @default(now())
+
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, category])
+  @@map("brain_faqs")
+}
+
+// ============================================
+// STAGE TRANSITIONS
+// ============================================
+
+model StageTransition {
+  id              String   @id @default(cuid())
+  boardId         String
+  fromStateId     String
+  toStateId       String?
+
+  triggerType     String   @default("manual")
+  triggerConfig   Json?
+  actionType      String?
+  actionConfig    Json?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  board           Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  fromState       State    @relation("TransitionFrom", fields: [fromStateId], references: [id], onDelete: Cascade)
+  toState         State?   @relation("TransitionTo", fields: [toStateId], references: [id], onDelete: SetNull)
+
+  @@unique([fromStateId, toStateId])
+  @@map("stage_transitions")
+}
+
+// ============================================
+// AI ENGINE (Sprint 4)
+// ============================================
+
+model ConversationMemory {
+  id             String       @id @default(cuid())
+  conversationId String
+  key            String
+  value          String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, key])
+  @@index([conversationId])
+  @@map("conversation_memory")
+}
+
+// ============================================
+// MULTICHANNEL & DYNAMIC FIELDS (Sprint 6)
+// ============================================
+
+model BoardChannel {
+  id          String   @id @default(cuid())
+  boardId     String
+  platform    String
+  status      String   @default("disconnected")
+  telegramBotToken      String?
+  telegramBotUsername   String?
+  telegramWebhookSecret String?
+  waPhoneNumberId       String?
+  waAccessToken         String?
+  waBusinessAccountId   String?
+  waVerifyToken         String?
+  igPageId              String?
+  igAccessToken         String?
+  lastError             String?
+  connectedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, platform])
+  @@map("board_channels")
+}
+
+model AdminNotification {
+  id             String   @id @default(cuid())
+  boardId        String
+  conversationId String
+  type           String
+  message        String
+  resolved       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@map("admin_notifications")
+}
+
+// ============================================
+// TOOL USE FRAMEWORK (Phase 2)
+// ============================================
+
+model ToolCallLog {
+  id             String   @id @default(cuid())
+  conversationId String
+  stateId        String?
+  toolName       String
+  inputJson      Json
+  outputJson     Json?
+  success        Boolean
+  errorMessage   String?
+  durationMs     Int?
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([toolName])
+  @@map("tool_call_logs")
+}
+
+// ============================================
+// AI PROVIDER ABSTRACTION (Phase 2)
+// ============================================
+
+model AIProviderConfig {
+  id                String   @id @default(cuid())
+  boardId           String   @unique
+  board             Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  defaultProvider   String   @default("groq")
+  defaultModel      String   @default("llama-3.3-70b-versatile")
+  fallbackProvider  String?
+  fallbackModel     String?
+
+  // JSON: { "extraction": "groq/llama-3.3-70b-versatile", "summarization": "deepseek/deepseek-chat" }
+  modelOverrides    Json     @default("{}")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("ai_provider_configs")
+}
+
+model PlatformAPIKey {
+  id                  String   @id @default(cuid())
+  provider            String   @unique
+  encryptedKey        String
+  isActive            Boolean  @default(true)
+  monthlyBudgetCents  Int?
+
+  createdAt           DateTime @default(now())
+
+  @@map("platform_api_keys")
+}
+
+// ============================================
+// BACKGROUND JOB QUEUE (Phase 3)
+// ============================================
+
+model Job {
+  id           String    @id @default(cuid())
+  type         String    // "process_message" | "escalation_check" | "summarize_conversation"
+  payload      Json
+  scheduledFor DateTime
+  status       String    @default("pending")  // pending | running | completed | failed | cancelled
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  lastError    String?
+  leadId       String?
+  boardId      String?
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  @@index([status, scheduledFor])
+  @@index([leadId])
+  @@map("jobs")
+}

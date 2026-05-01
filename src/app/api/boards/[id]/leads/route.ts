@@ -8,6 +8,7 @@ function jsonError(message: string, code: string, status: number) {
 
 /**
  * POST /api/boards/[id]/leads
+ * Legt direkt einen Lead an + leere Conversation für Messaging-Bereitschaft
  * Body: { name, phone?, email?, tags?, source?, channel?: "whatsapp"|"telegram"|"manual" }
  */
 export async function POST(
@@ -25,68 +26,60 @@ export async function POST(
   const body = await req.json()
   const { name, phone, email, tags, source = "manual", channel = "manual" } = body
 
-  // Phone required only for WhatsApp
   if (channel === "whatsapp" && !phone) {
     return jsonError("Telefonnummer ist erforderlich für WhatsApp.", "INVALID_INPUT", 400)
   }
 
-  const board = await prisma.board.findUnique({
-    where: { id: params.id },
-    select: { teamId: true },
-  })
-  if (!board) return jsonError("Board was deleted or you don't have access.", "BOARD_NOT_FOUND", 404)
+  const board = await prisma.board.findUnique({ where: { id: params.id }, select: { teamId: true } })
+  if (!board) return jsonError("Board not found.", "BOARD_NOT_FOUND", 404)
 
   const normalizedPhone = phone ? (phone.startsWith("+") ? phone : `+${phone}`) : null
-
-  // For WhatsApp leads, we need a bridge waAccountId (legacy FK) — find the board's WA channel
-  let waAccountId: string | undefined
-  if (channel === "whatsapp") {
-    // Use existing WhatsAppAccount from the team as bridge, or create a placeholder
-    let waAccount = await prisma.whatsAppAccount.findFirst({ where: { teamId: board.teamId } })
-    if (!waAccount) {
-      waAccount = await prisma.whatsAppAccount.create({
-        data: { teamId: board.teamId, phoneNumber: `wa-board-${params.id}`, status: "ACTIVE" },
-      })
-    }
-    waAccountId = waAccount.id
-  }
 
   const firstState = await prisma.state.findFirst({
     where: { boardId: params.id },
     orderBy: { orderIndex: "asc" },
   })
 
-  // Dedup: for WhatsApp by phone+waAccount, for telegram/manual by boardId+channel+externalId/phone
-  if (channel === "whatsapp" && normalizedPhone && waAccountId) {
-    const existing = await prisma.conversation.findFirst({
-      where: { customerPhone: normalizedPhone, waAccountId },
+  // Dedup: existierender Lead mit gleicher Phone+BoardId
+  if (normalizedPhone) {
+    const existingLead = await (prisma as any).lead.findFirst({
+      where: { boardId: params.id, phone: normalizedPhone },
     })
-    if (existing) {
-      if (!existing.boardId) {
-        await prisma.conversation.update({
-          where: { id: existing.id },
-          data: { boardId: params.id, currentStateId: firstState?.id || null, customerName: name || existing.customerName },
+    if (existingLead) {
+      if (!existingLead.currentStateId && firstState) {
+        await (prisma as any).lead.update({
+          where: { id: existingLead.id },
+          data: { name: name || existingLead.name, currentStateId: firstState.id },
         })
       }
-      return NextResponse.json({ success: true, conversation: existing, message: "Lead already exists" }, { status: 200 })
+      return NextResponse.json({ success: true, lead: existingLead, message: "Lead already exists" }, { status: 200 })
     }
   }
 
-  const conversation = await prisma.conversation.create({
+  const lead = await (prisma as any).lead.create({
     data: {
-      customerPhone: normalizedPhone || `manual-${Date.now()}`,
-      customerName: name || normalizedPhone || "Neuer Lead",
-      waAccountId: waAccountId || null,
       boardId: params.id,
-      currentStateId: firstState?.id || null,
+      name: name || normalizedPhone || "Neuer Lead",
+      phone: normalizedPhone,
+      email: email || null,
       source,
-      tags: tags || [],
-      status: "ACTIVE",
       channel,
-      externalId: null, // for telegram: set when lead clicks deep link
+      tags: tags || [],
+      currentStateId: firstState?.id || null,
       customData: email ? { email } : {},
     },
   })
 
-  return NextResponse.json({ success: true, conversation }, { status: 201 })
+  // Leere Conversation anlegen für Messaging-Bereitschaft
+  await (prisma as any).conversation.create({
+    data: {
+      leadId: lead.id,
+      boardId: params.id,
+      channel,
+      status: "ACTIVE",
+      externalId: null,
+    },
+  })
+
+  return NextResponse.json({ success: true, lead }, { status: 201 })
 }

@@ -19,11 +19,12 @@ export async function executeStateForConversation(
   conversationId: string,
   userMessage: string
 ): Promise<ExecutionResult> {
-  const conversation = await prisma.conversation.findUnique({
+  const conversation = await (prisma as any).conversation.findUnique({
     where: { id: conversationId },
     include: {
       currentState: true,
       board: { include: { brain: true } },
+      lead: true,
     },
   })
 
@@ -37,7 +38,7 @@ export async function executeStateForConversation(
   const state = conversation.currentState
 
   const isBoardActive =
-    board.adminStatus !== "disabled" && board.ownerStatus !== "paused"
+    board.adminStatus.toString() !== "SUSPENDED" && board.ownerStatus !== "paused"
   if (!isBoardActive) return { skipped: true, reason: "board_inactive" }
 
   // Increment message counter and maybe schedule summarization
@@ -97,13 +98,11 @@ async function executeAIState(
   conversation: {
     id: string
     boardId: string | null
-    waAccountId: string | null
-    customerPhone: string
     channel: string
-    collectedFields: unknown
     customData: unknown
     currentStateId: string | null
     followupCount: number
+    lead?: { customData: unknown } | null
   },
   state: {
     id: string
@@ -150,8 +149,6 @@ async function executeAIState(
   const loopCtx: AgentLoopContext = {
     conversationId: conversation.id,
     boardId: conversation.boardId ?? "",
-    waAccountId: conversation.waAccountId ?? "",
-    customerPhone: conversation.customerPhone,
     channel: conversation.channel,
     userMessage,
     brain: brain as Parameters<typeof runAgentLoop>[0]["brain"],
@@ -166,8 +163,7 @@ async function executeAIState(
       completionRule: state.completionRule,
       availableTools: (state.availableTools as string[]) ?? [],
     },
-    collectedFields: (conversation.collectedFields as string[]) ?? [],
-    customData: (conversation.customData as Record<string, unknown>) ?? {},
+    customData: (conversation.lead?.customData as Record<string, unknown>) ?? {},
     assets: [],
   }
 

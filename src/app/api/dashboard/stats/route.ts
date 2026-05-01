@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     },
     select: {
       id: true,
-      source: true,
+      channel: true,
       status: true,
       createdAt: true,
       currentStateId: true,
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
 
   const channelMap = new Map<string, number>()
   for (const c of conversations) {
-    const source = c.source || "unknown"
+    const source = c.channel || "unknown"
     channelMap.set(source, (channelMap.get(source) || 0) + 1)
   }
 

@@ -1,4 +1,6 @@
-import type { GroqMessage } from "@/lib/ai/groq-client"
+import type { AIMessage } from "@/lib/ai/providers/types"
+
+type GroqMessage = Pick<AIMessage, "role" | "content"> & { role: "system" | "user" | "assistant" }
 
 interface BrainConfig {
   systemPrompt: string
@@ -19,7 +21,6 @@ interface StateConfig {
 
 interface LeadContext {
   customData?: Record<string, unknown>
-  collectedFields?: string[]
 }
 
 interface MessageEntry {
@@ -64,8 +65,8 @@ export function buildPrompt(
 
   const dataToCollect = state.dataToCollect || []
   if (dataToCollect.length > 0) {
-    const alreadyCollected = lead.collectedFields || []
-    const needed = dataToCollect.filter(k => !alreadyCollected.includes(k))
+    const knownKeys = lead.customData ? Object.keys(lead.customData) : []
+    const needed = dataToCollect.filter(k => !knownKeys.includes(k))
     if (needed.length > 0) {
       parts.push(`\nNOCH ZU SAMMELN: ${needed.join(", ")}`)
     }

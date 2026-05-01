@@ -1,0 +1,12 @@
+-- ============================================================
+-- v3_backfill_data: Datenmigration-Marker
+-- ============================================================
+-- Dieses File ist absichtlich leer.
+-- Die eigentliche Datenmigration passiert via:
+--   npx tsx scripts/backfill-leads-v3.ts
+--
+-- Reihenfolge:
+--   1. prisma migrate deploy (führt v3_prep aus)
+--   2. npx tsx scripts/backfill-leads-v3.ts
+--   3. prisma migrate deploy (führt v3_finalize aus)
+-- ============================================================

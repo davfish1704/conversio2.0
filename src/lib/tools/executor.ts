@@ -51,21 +51,21 @@ export async function executeToolCalls(params: {
     const durationMs = Date.now() - start
 
     // Log to DB (skip in simulate mode)
+    // v3: toolCallLog → executionLog
     if (!context.simulate) {
-      await prisma.toolCallLog.create({
+      await (prisma as any).executionLog.create({
         data: {
+          boardId: board.id,
           conversationId: conversation.id,
-          stateId: context.stateId,
-          toolName: toolCall.name,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          inputJson: toolCall.arguments as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          outputJson: (result.data ?? null) as any,
-          success: result.success,
+          stateId: context.stateId ?? null,
+          action: toolCall.name,
+          input: JSON.stringify(toolCall.arguments),
+          output: JSON.stringify(result.data ?? null),
+          status: result.success ? "SUCCESS" : "ERROR",
           errorMessage: result.error ?? null,
-          durationMs,
+          needsAttention: !result.success,
         },
-      }).catch((e) => console.error("[ToolCallLog] Failed to write log:", e))
+      }).catch((e: unknown) => console.error("[ExecutionLog] Failed to write log:", e))
     }
 
     const resultText = result.success

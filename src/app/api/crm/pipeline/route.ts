@@ -14,8 +14,9 @@ const patchSchema = z.object({
 
 /**
  * PATCH /api/crm/pipeline
- * Move a conversation to a new state with history tracking
+ * Move a lead to a new state with history tracking
  * Body: { conversationId, targetStateId }
+ * conversationId hier ist die leadId (für Kompatibilität mit Frontend)
  */
 export async function PATCH(req: NextRequest) {
   const session = await auth()
@@ -32,18 +33,41 @@ export async function PATCH(req: NextRequest) {
 
     const { conversationId, targetStateId } = parsed.data
 
-    // Verify user has access to this conversation via board membership
-    const conversation = await prisma.conversation.findFirst({
+    // Lookup via Conversation um Board-Membership zu prüfen
+    const conversation = await (prisma as any).conversation.findFirst({
       where: {
         id: conversationId,
         board: {
           members: { some: { userId: session.user.id } },
         },
       },
-      include: { currentState: true },
+      include: {
+        lead: {
+          include: { currentState: true },
+        },
+      },
     })
 
-    if (!conversation) {
+    // Falls conversationId tatsächlich eine leadId ist (Frontend-Kompatibilität)
+    let lead = conversation?.lead ?? null
+    let boardId = conversation?.boardId ?? null
+
+    if (!lead) {
+      // Versuche direkt als Lead-ID zu finden
+      const directLead = await (prisma as any).lead.findFirst({
+        where: {
+          id: conversationId,
+          board: { members: { some: { userId: session.user.id } } },
+        },
+        include: { currentState: true },
+      })
+      if (directLead) {
+        lead = directLead
+        boardId = directLead.boardId
+      }
+    }
+
+    if (!lead) {
       return jsonError("Lead not found or access denied.", "LEAD_NOT_FOUND", 404)
     }
 
@@ -51,7 +75,7 @@ export async function PATCH(req: NextRequest) {
     const targetState = await prisma.state.findFirst({
       where: {
         id: targetStateId,
-        boardId: conversation.boardId || undefined,
+        boardId: boardId || undefined,
       },
     })
 
@@ -61,39 +85,33 @@ export async function PATCH(req: NextRequest) {
 
     // Build state history entry
     const historyEntry = {
-      fromStateId: conversation.currentStateId,
-      fromStateName: conversation.currentState?.name || null,
+      fromStateId: lead.currentStateId,
+      fromStateName: lead.currentState?.name || null,
       toStateId: targetStateId,
       timestamp: new Date().toISOString(),
       source: "manual_drag",
     }
 
-    const existingHistory = Array.isArray(conversation.stateHistory) ? conversation.stateHistory : []
+    const existingHistory = Array.isArray(lead.stateHistory) ? lead.stateHistory : []
 
-    const updatedConversation = await prisma.conversation.update({
-      where: { id: conversationId },
+    const updatedLead = await (prisma as any).lead.update({
+      where: { id: lead.id },
       data: {
         currentStateId: targetStateId,
         stateHistory: [...existingHistory, historyEntry],
-        lastMessageAt: new Date(),
       },
-      include: {
-        currentState: true,
-        messages: {
-          orderBy: { timestamp: "desc" },
-          take: 3,
-          select: {
-            id: true,
-            content: true,
-            direction: true,
-            timestamp: true,
-            messageType: true,
-          },
-        },
-      },
+      include: { currentState: true },
     })
 
-    return NextResponse.json({ success: true, conversation: updatedConversation })
+    // Synce Conversation.currentStateId wenn vorhanden
+    if (conversation) {
+      await (prisma as any).conversation.update({
+        where: { id: conversation.id },
+        data: { currentStateId: targetStateId },
+      })
+    }
+
+    return NextResponse.json({ success: true, lead: updatedLead })
   } catch (error) {
     console.error("CRM Pipeline PATCH error:", error)
     return jsonError("Status could not be updated. Please try again later.", "INTERNAL_ERROR", 500)
@@ -114,7 +132,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const board = await prisma.board.findFirst({
+    const board = await (prisma as any).board.findFirst({
       where: {
         id: boardId,
         members: { some: { userId: session.user.id } },
@@ -123,20 +141,28 @@ export async function GET(req: NextRequest) {
         states: {
           orderBy: { orderIndex: "asc" },
           include: {
-            conversations: {
-              where: { status: "ACTIVE" },
-              orderBy: { lastMessageAt: "desc" },
+            leads: {
+              orderBy: { updatedAt: "desc" },
               take: 100,
               include: {
-                messages: {
-                  orderBy: { timestamp: "desc" },
+                conversations: {
+                  orderBy: { lastMessageAt: "desc" },
                   take: 1,
                   select: {
                     id: true,
-                    content: true,
-                    direction: true,
-                    timestamp: true,
-                    messageType: true,
+                    lastMessageAt: true,
+                    channel: true,
+                    messages: {
+                      orderBy: { timestamp: "desc" },
+                      take: 1,
+                      select: {
+                        id: true,
+                        content: true,
+                        direction: true,
+                        timestamp: true,
+                        messageType: true,
+                      },
+                    },
                   },
                 },
               },
@@ -150,46 +176,59 @@ export async function GET(req: NextRequest) {
       return jsonError("Board was deleted or you don't have access.", "BOARD_NOT_FOUND", 404)
     }
 
-    const unassignedLeads = await prisma.conversation.findMany({
+    const unassignedLeads = await (prisma as any).lead.findMany({
       where: {
         boardId,
         currentStateId: null,
-        status: "ACTIVE",
       },
-      orderBy: { lastMessageAt: "desc" },
+      orderBy: { updatedAt: "desc" },
       take: 100,
       include: {
-        messages: {
-          orderBy: { timestamp: "desc" },
+        conversations: {
+          orderBy: { lastMessageAt: "desc" },
           take: 1,
           select: {
             id: true,
-            content: true,
-            direction: true,
-            timestamp: true,
-            messageType: true,
+            lastMessageAt: true,
+            channel: true,
+            messages: {
+              orderBy: { timestamp: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                content: true,
+                direction: true,
+                timestamp: true,
+                messageType: true,
+              },
+            },
           },
         },
       },
     })
 
-    const mapConv = (conv: any) => ({
-      id: conv.id,
-      customerName: conv.customerName,
-      customerPhone: conv.customerPhone,
-      customerAvatar: conv.customerAvatar,
-      leadScore: conv.leadScore,
-      status: conv.status,
-      source: conv.source,
-      tags: conv.tags,
-      customFields: conv.customFields,
-      stateHistory: conv.stateHistory,
-      lastMessageAt: conv.lastMessageAt,
-      createdAt: conv.createdAt,
-      updatedAt: conv.updatedAt,
-      messages: conv.messages,
-      currentStateId: conv.currentStateId,
-    })
+    const mapLead = (lead: any) => {
+      const latestConv = lead.conversations?.[0]
+      return {
+        id: lead.id,
+        name: lead.name,
+        phone: lead.phone,
+        avatar: lead.avatar,
+        leadScore: lead.leadScore,
+        source: lead.source,
+        channel: lead.channel || latestConv?.channel,
+        tags: lead.tags,
+        customData: lead.customData,
+        stateHistory: lead.stateHistory,
+        currentStateId: lead.currentStateId,
+        createdAt: lead.createdAt,
+        updatedAt: lead.updatedAt,
+        lastMessageAt: latestConv?.lastMessageAt,
+        lastMessage: latestConv?.messages?.[0] || null,
+        conversationId: latestConv?.id || null,
+        messages: latestConv?.messages || [],
+      }
+    }
 
     return NextResponse.json({
       board: {
@@ -198,14 +237,14 @@ export async function GET(req: NextRequest) {
         description: board.description,
         isActive: board.isActive,
       },
-      states: board.states.map((state) => ({
+      states: board.states.map((state: any) => ({
         id: state.id,
         name: state.name,
         orderIndex: state.orderIndex,
         type: state.type,
-        leads: state.conversations.map(mapConv),
+        leads: state.leads.map(mapLead),
       })),
-      unassignedLeads: unassignedLeads.map(mapConv),
+      unassignedLeads: unassignedLeads.map(mapLead),
     })
   } catch (error) {
     console.error("CRM Pipeline API error:", error)

@@ -95,7 +95,9 @@ export async function GET() {
         take: 5,
         include: {
           conversation: {
-            select: { customerPhone: true, customerName: true },
+            select: {
+              id: true,
+            },
           },
         },
       }),

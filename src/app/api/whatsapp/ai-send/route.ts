@@ -1,8 +1,46 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-import { generateWhatsAppGreeting, generateWhatsAppFollowUp, groqChat } from "@/lib/ai/groq-client"
+import { aiRegistry } from "@/lib/ai/registry"
 import { rateLimit } from "@/lib/rate-limit"
+
+async function generateMessage(
+  action: "greeting" | "followup" | "custom",
+  contactName: string,
+  opts: { context?: string; lastContact?: string; prompt?: string }
+): Promise<{ content: string; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
+  let systemContent: string
+  let userContent: string
+
+  if (action === "greeting") {
+    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze, professionelle WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze."
+    userContent = `Erstelle eine Begrüßung für ${contactName}${opts.context ? `. Kontext: ${opts.context}` : ""}`
+  } else if (action === "followup") {
+    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe eine kurze WhatsApp-Follow-up-Nachricht auf Deutsch. Maximal 2 Sätze. Nicht aufdringlich."
+    userContent = `Follow-up für ${contactName}. Letzter Kontakt: ${opts.lastContact ?? "vor kurzem"}${opts.context ? `. Kontext: ${opts.context}` : ""}`
+  } else {
+    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze."
+    userContent = opts.prompt!
+  }
+
+  const res = await aiRegistry.execute({
+    boardId: "global",
+    purpose: "main",
+    messages: [
+      { role: "system", content: systemContent },
+      { role: "user", content: userContent },
+    ],
+  })
+
+  return {
+    content: res.content,
+    usage: {
+      prompt_tokens: res.usage.inputTokens,
+      completion_tokens: res.usage.outputTokens,
+      total_tokens: res.usage.totalTokens,
+    },
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,62 +68,45 @@ export async function POST(req: NextRequest) {
     // Resolve conversation for context
     let conversation = null
     let contactName = data?.name || "Kunde"
-    
+
     if (conversationId) {
-      conversation = await prisma.conversation.findUnique({
+      conversation = await (prisma as any).conversation.findUnique({
         where: { id: conversationId },
-        include: { 
+        include: {
           messages: { orderBy: { timestamp: "desc" }, take: 10 },
+          lead: { select: { name: true } },
         },
       })
-      
-      if (conversation?.customerName) {
-        contactName = conversation.customerName
+
+      if ((conversation as any)?.lead?.name) {
+        contactName = (conversation as any).lead.name
       }
     }
 
-    // Generate message based on action
-    let generatedContent: string
-    let aiUsage: any = null
+    let result: { content: string; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }
 
     try {
       switch (action) {
-        case "greeting": {
-          const result = await generateWhatsAppGreeting(
-            contactName,
-            data?.context || conversation?.source || ""
-          )
-          generatedContent = result.content
-          aiUsage = result.usage
+        case "greeting":
+          result = await generateMessage("greeting", contactName, {
+            context: data?.context || conversation?.source || "",
+          })
           break
-        }
 
         case "followup": {
-          const lastContact = conversation?.lastMessageAt 
+          const lastContact = conversation?.lastMessageAt
             ? new Date(conversation.lastMessageAt).toLocaleDateString("de-DE")
             : "vor kurzem"
-          const result = await generateWhatsAppFollowUp(
-            contactName,
-            lastContact,
-            data?.context
-          )
-          generatedContent = result.content
-          aiUsage = result.usage
+          result = await generateMessage("followup", contactName, { lastContact, context: data?.context })
           break
         }
 
-        case "custom": {
+        case "custom":
           if (!data?.prompt) {
             return NextResponse.json({ error: "custom action requires data.prompt" }, { status: 400 })
           }
-          const result = await groqChat([
-            { role: "system", content: "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze." },
-            { role: "user", content: data.prompt },
-          ])
-          generatedContent = result.content
-          aiUsage = result.usage
+          result = await generateMessage("custom", contactName, { prompt: data.prompt })
           break
-        }
 
         default:
           return NextResponse.json({ error: "Unknown action. Use: greeting, followup, custom" }, { status: 400 })
@@ -98,23 +119,22 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Resolve phone number ID
-    let phoneNumberId = data?.phoneNumberId
-    if (!phoneNumberId && conversation?.waAccountId) {
-      const waAccount = await prisma.whatsAppAccount.findUnique({
-        where: { id: conversation.waAccountId },
-      })
-      if (waAccount) {
-        phoneNumberId = waAccount.phoneNumber
-      }
-    }
+    const generatedContent = result.content
+    const aiUsage = result.usage
 
-    if (!phoneNumberId) {
-      const waAccount = await prisma.whatsAppAccount.findFirst({
-        where: { status: "ACTIVE" },
+    // Resolve phone number ID via BoardChannel
+    let phoneNumberId = data?.phoneNumberId
+    let resolvedAccessToken: string | null = null
+
+    if (!phoneNumberId && conversation?.boardId) {
+      const { decrypt } = await import("@/lib/crypto/secrets")
+      const bc = await prisma.boardChannel.findUnique({
+        where: { boardId_platform: { boardId: conversation.boardId, platform: "whatsapp" } },
+        select: { waPhoneNumberId: true, waAccessToken: true },
       })
-      if (waAccount) {
-        phoneNumberId = waAccount.phoneNumber
+      if (bc?.waPhoneNumberId && bc.waAccessToken) {
+        phoneNumberId = bc.waPhoneNumberId
+        resolvedAccessToken = decrypt(bc.waAccessToken)
       }
     }
 
@@ -126,7 +146,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Send via Meta API
-    const accessToken = process.env.META_ACCESS_TOKEN
+    const accessToken = resolvedAccessToken || process.env.META_ACCESS_TOKEN
     if (!accessToken) {
       return NextResponse.json(
         { error: "META_ACCESS_TOKEN not configured" },
@@ -184,11 +204,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Log AI usage for cost tracking
     console.log("🤖 AI Usage:", {
       action,
-      model: "llama-3.1-8b-instant",
-      tokens: aiUsage?.total_tokens || 0,
+      tokens: aiUsage.total_tokens,
       conversationId,
     })
 
