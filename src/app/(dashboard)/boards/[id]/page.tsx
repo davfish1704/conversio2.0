@@ -76,7 +76,7 @@ export default function BoardPipelinePage() {
       setBoard(boardData.board || boardData)
       setStates(statesData.states || [])
       setPipelineStates(pipelineData.states || [])
-      setUnassignedLeads(pipelineData.unassigned || [])
+      setUnassignedLeads(pipelineData.unassignedLeads || [])
     } catch (err) {
       if ((err as Error).name !== "AbortError") console.error("Fetch error:", err)
     } finally {

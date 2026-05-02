@@ -67,7 +67,7 @@ export default function TopNavigation({ user }: TopNavigationProps) {
 
   const getBoardSubLink = (subPath: string) => {
     if (lastBoardId) return `/boards/${lastBoardId}${subPath}`
-    return "/crm"
+    return "/dashboard"
   }
 
   const navItems = [
@@ -77,7 +77,7 @@ export default function TopNavigation({ user }: TopNavigationProps) {
       href: "/crm",
       icon: "CRM",
       children: [
-        { label: t("nav.pipeline") || "Pipeline", href: "/crm" },
+        { label: t("nav.pipeline") || "Pipeline", href: getBoardSubLink("") },
         { label: t("nav.flowBuilder") || "Flow Builder", href: getBoardSubLink("/flow") },
         { label: t("nav.boardSettings") || "Board Settings", href: getBoardSubLink("/settings") },
       ],
@@ -90,7 +90,8 @@ export default function TopNavigation({ user }: TopNavigationProps) {
   ]
 
   const isActive = (href: string) => {
-    if (href === "/crm") return pathname === "/crm" || pathname.startsWith("/boards/")
+    if (href === "/dashboard") return pathname === "/dashboard"
+    if (href === "/crm") return pathname.startsWith("/boards/") || pathname === "/crm"
     return pathname === href || pathname.startsWith(href + "/")
   }
 
