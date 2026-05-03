@@ -66,6 +66,14 @@ export default function BoardSettingsPage() {
   const [savingAi, setSavingAi] = useState(false)
   const [providerModels, setProviderModels] = useState<Record<string, { label: string; models: { value: string; label: string }[] }>>({})
 
+  // Acquisition Invites
+  interface AcqInvite { id: string; token: string; deepLink: string; qrUrl: string; campaign: string | null; expiresAt: string; platform: string }
+  interface AcqGenerated { deepLink: string; qrUrl: string; token: string; expiresAt: string; campaign: string | null }
+  const [acqInvites, setAcqInvites] = useState<AcqInvite[]>([])
+  const [acqCampaign, setAcqCampaign] = useState<Record<string, string>>({})
+  const [acqGenerating, setAcqGenerating] = useState<Record<string, boolean>>({})
+  const [acqGenerated, setAcqGenerated] = useState<Record<string, AcqGenerated>>({})
+
   const PROVIDER_COST_EST: Record<string, number> = {
     "llama-3.3-70b-versatile": 0.03,
     "llama-3.1-8b-instant": 0.003,
@@ -113,6 +121,11 @@ export default function BoardSettingsPage() {
     fetch(`/api/boards/${id}/custom-fields`)
       .then(r => r.json())
       .then(data => setCustomFields(data.fields || []))
+      .catch(() => {})
+
+    fetch(`/api/boards/${id}/acquisition-invite`)
+      .then(r => r.json())
+      .then(data => setAcqInvites(data.invites || []))
       .catch(() => {})
   }, [id])
 
@@ -218,6 +231,49 @@ export default function BoardSettingsPage() {
     fetch(`/api/boards/${id}/channels`)
       .then(r => r.json())
       .then(data => setChannels(data.channels || []))
+  }
+
+  const formatAcqDate = (iso: string) => {
+    const d = new Date(iso)
+    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`
+  }
+
+  const daysLeft = (iso: string) => Math.max(0, Math.floor((new Date(iso).getTime() - Date.now()) / 86400000))
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast({ title: "Link kopiert!" })
+  }
+
+  const generateAcqInvite = async (channelId: string) => {
+    setAcqGenerating(prev => ({ ...prev, [channelId]: true }))
+    try {
+      const campaign = acqCampaign[channelId]?.trim() || undefined
+      const res = await fetch(`/api/boards/${id}/acquisition-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetChannelId: channelId, campaign }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast({ title: data.error || "Fehler beim Generieren", variant: "destructive" })
+        return
+      }
+      setAcqGenerated(prev => ({ ...prev, [channelId]: data }))
+      setAcqInvites(prev => [{
+        id: `tmp-${Date.now()}`,
+        token: data.token,
+        deepLink: data.deepLink,
+        qrUrl: data.qrUrl,
+        campaign: data.campaign ?? null,
+        expiresAt: data.expiresAt,
+        platform: channels.find(c => c.id === channelId)?.platform ?? "",
+      }, ...prev])
+    } catch {
+      toast({ title: "Fehler beim Generieren", variant: "destructive" })
+    } finally {
+      setAcqGenerating(prev => ({ ...prev, [channelId]: false }))
+    }
   }
 
   const connectTelegram = async () => {
@@ -459,6 +515,95 @@ export default function BoardSettingsPage() {
               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Demnächst — Meta Approval ausstehend</span>
             </div>
           </div>
+        </div>
+
+        {/* Akquise-Links */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Akquise-Links</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Generiere Start-Links für Meta Ads, QR-Codes oder Direktversand</p>
+          </div>
+
+          {channels.filter(c => c.status === "connected" && ["telegram", "whatsapp"].includes(c.platform)).length === 0 && (
+            <p className="text-sm text-gray-400 italic">Verbinde zuerst einen Kanal (Telegram oder WhatsApp), um Akquise-Links zu generieren.</p>
+          )}
+
+          {channels.filter(c => c.status === "connected" && ["telegram", "whatsapp"].includes(c.platform)).map(ch => {
+            const label = ch.platform === "telegram"
+              ? `Telegram${ch.telegramBotUsername ? ` — @${ch.telegramBotUsername}` : ""}`
+              : `WhatsApp${ch.waPhoneNumberId ? ` — ${ch.waPhoneNumberId}` : ""}`
+            const generated = acqGenerated[ch.id]
+            const chInvites = acqInvites.filter(inv => inv.platform === ch.platform)
+
+            return (
+              <div key={ch.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+                <h3 className="font-medium text-gray-900 dark:text-white text-sm">{label}</h3>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={acqCampaign[ch.id] ?? ""}
+                    onChange={e => setAcqCampaign(prev => ({ ...prev, [ch.id]: e.target.value }))}
+                    placeholder="Campaign (optional, z.B. meta_ad_mai)"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => generateAcqInvite(ch.id)}
+                    disabled={!!acqGenerating[ch.id]}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {acqGenerating[ch.id] ? "..." : "Link generieren"}
+                  </button>
+                </div>
+
+                {generated && (
+                  <div className="space-y-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Link:</span>
+                      <code className="flex-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-1 rounded truncate">{generated.deepLink}</code>
+                      <button
+                        onClick={() => copyToClipboard(generated.deepLink)}
+                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 shrink-0"
+                      >
+                        Kopieren
+                      </button>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={generated.qrUrl} alt="QR-Code" width={96} height={96} className="rounded border border-gray-200 dark:border-gray-700" />
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Gültig bis: {formatAcqDate(generated.expiresAt)}</p>
+                        <a
+                          href={generated.qrUrl}
+                          download="acquisition-qr.png"
+                          className="inline-block px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+                        >
+                          QR Download
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {chInvites.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bestehende Links</p>
+                    {chInvites.map(inv => (
+                      <div key={inv.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-800/50 rounded">
+                        <code className="font-mono">{inv.token.slice(0, 8)}…</code>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <span>{inv.campaign ?? "—"}</span>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <span>⏰ {daysLeft(inv.expiresAt)}d</span>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <span className="text-green-600 dark:text-green-400">✓</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {/* Custom Fields */}
