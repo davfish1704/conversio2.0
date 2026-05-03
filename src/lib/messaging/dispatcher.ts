@@ -37,13 +37,18 @@ export async function sendMessage(conversationId: string, text: string): Promise
     if (!token) return { ok: false, error: "No Telegram token configured" }
 
     const chatId = conversation.externalId || conversation.lead?.phone
+    console.log("[telegram-send] token found:", !!token, "chatId:", chatId)
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text }),
     })
     const data = await res.json()
-    if (!data.ok) return { ok: false, error: data.description }
+    console.log("[telegram-send] API response:", JSON.stringify(data))
+    if (!data.ok) {
+      console.log("[telegram-send] ERROR:", data.description)
+      return { ok: false, error: data.description }
+    }
     return { ok: true, externalMessageId: String(data.result?.message_id) }
   }
 

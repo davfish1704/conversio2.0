@@ -294,7 +294,7 @@ model Conversation {
   updatedAt            DateTime           @updatedAt
 
   lead          Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  board         Board          @relation(fields: [boardId], references: [id])
+  board         Board          @relation(fields: [boardId], references: [id], onDelete: Cascade)
   currentState  State?         @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
   messages      Message[]
   executionLogs ExecutionLog[]
@@ -407,7 +407,9 @@ model BoardChannel {
 model ChannelInvite {
   id                     String              @id @default(cuid())
   boardId                String
-  leadId                 String
+  leadId                 String?
+  source                 InviteSource        @default(LEAD_REINVITE)
+  campaign               String?
   targetChannelId        String
   token                  String              @unique
   status                 ChannelInviteStatus @default(PENDING)
@@ -419,7 +421,7 @@ model ChannelInvite {
   createdAt              DateTime            @default(now())
 
   board   Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  lead    Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  lead    Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
   channel BoardChannel @relation(fields: [targetChannelId], references: [id])
 
   @@index([token])
@@ -431,6 +433,11 @@ enum ChannelInviteStatus {
   PENDING
   CONSUMED
   EXPIRED
+}
+
+enum InviteSource {
+  LEAD_REINVITE
+  BOARD_ACQUISITION
 }
 
 // ============================================

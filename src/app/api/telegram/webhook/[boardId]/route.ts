@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
+import { decrypt } from "@/lib/crypto/secrets"
 
 const CHANNEL_TOKEN_RE = /^[\w-]{10,16}$/
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     select: { adminStatus: true, ownerStatus: true },
   })
   const boardActive = board
-    ? (board as any).adminStatus.toString() !== "SUSPENDED" && (board as any).ownerStatus !== "paused"
+    ? (board as any).adminStatus.toString() !== "SUSPENDED" && (board as any).ownerStatus !== "INACTIVE"
     : true
 
   try {
@@ -47,34 +48,121 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     if (typeof content === "string" && content.startsWith("/start ")) {
       const startParam = content.slice(7).trim()
 
-      // Channel-Switch-Token erkennen (nicht lead_-Präfix, 10-16 Zeichen)
+      // Invite-Token erkennen (nicht lead_-Präfix, 10-16 Zeichen)
       if (!startParam.startsWith("lead_") && CHANNEL_TOKEN_RE.test(startParam)) {
-        const invite = await findInviteByToken(startParam)
-        if (invite && invite.status === "PENDING" && new Date(invite.expiresAt) > new Date()) {
-          let conv = await (prisma as any).conversation.findFirst({
-            where: { leadId: invite.lead.id, channel: "telegram", boardId },
+        const rawBotToken = channel.telegramBotToken
+          ? decrypt(channel.telegramBotToken)
+          : (process.env.TELEGRAM_BOT_TOKEN ?? null)
+
+        const sendBotMsg = async (text: string) => {
+          if (!rawBotToken) return
+          await fetch(`https://api.telegram.org/bot${rawBotToken}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, text }),
           })
-          if (!conv) {
-            conv = await (prisma as any).conversation.create({
-              data: {
-                leadId: invite.lead.id,
-                boardId,
-                channel: "telegram",
-                externalId: chatId,
-                status: "ACTIVE",
-                lastMessageAt: timestamp,
-              },
-            })
-          } else {
-            await (prisma as any).conversation.update({
-              where: { id: conv.id },
-              data: { externalId: chatId, lastMessageAt: timestamp },
-            })
-          }
-          await consumeInvite(startParam, conv.id)
-          // Kein Job für die /start-Nachricht
+        }
+
+        const invite = await findInviteByToken(startParam)
+
+        if (!invite) {
+          console.log("[invalid-token] Token nicht gefunden:", startParam)
+          await sendBotMsg("Dieser Link ist nicht mehr gültig.")
           return NextResponse.json({ ok: true })
         }
+        if ((invite as any).status === "CONSUMED") {
+          console.log("[invalid-token] Token bereits verwendet:", startParam)
+          await sendBotMsg("Dieser Link wurde bereits verwendet.")
+          return NextResponse.json({ ok: true })
+        }
+        if ((invite as any).status !== "PENDING" || new Date((invite as any).expiresAt) <= new Date()) {
+          console.log("[invalid-token] Token abgelaufen:", startParam)
+          await sendBotMsg("Dieser Link ist nicht mehr gültig.")
+          return NextResponse.json({ ok: true })
+        }
+        if ((invite as any).boardId !== boardId) {
+          console.log("[invalid-token] boardId mismatch:", { inviteBoardId: (invite as any).boardId, boardId })
+          await sendBotMsg("Fehler: Ungültige Einladung.")
+          return NextResponse.json({ ok: true })
+        }
+
+        if ((invite as any).source === "BOARD_ACQUISITION") {
+          // CASE A: Neuer Lead aus Akquise-Link
+          const defaultState = await (prisma as any).state.findFirst({
+            where: { boardId },
+            orderBy: { orderIndex: "asc" },
+          })
+
+          const newLead = await (prisma as any).lead.create({
+            data: {
+              boardId,
+              name: customerName,
+              phone: chatId,
+              channel: "telegram",
+              source: (invite as any).campaign
+                ? `meta_ad:${(invite as any).campaign}`
+                : "telegram_acquisition",
+              tags: [],
+              currentStateId: defaultState?.id ?? null,
+              customData: {},
+            },
+          })
+
+          const conv = await (prisma as any).conversation.create({
+            data: {
+              leadId: newLead.id,
+              boardId,
+              channel: "telegram",
+              externalId: chatId,
+              status: "ACTIVE",
+              lastMessageAt: timestamp,
+            },
+          })
+
+          // TODO: Wenn boardBrain ein Welcome-Message-Feld bekommt, hier auto-greeten
+          await consumeInvite(startParam, conv.id)
+          console.log("[acquisition] new lead created", {
+            leadId: newLead.id,
+            conversationId: conv.id,
+            campaign: (invite as any).campaign ?? null,
+          })
+
+          if (boardActive) {
+            await enqueueJob({
+              type: "process_message",
+              payload: { conversationId: conv.id, userMessage: "/start" },
+              leadId: newLead.id,
+              boardId,
+            })
+          }
+          return NextResponse.json({ ok: true })
+        }
+
+        // CASE B: LEAD_REINVITE — bestehenden Lead mit neuem Telegram-Channel verknüpfen
+        const existingLead = (invite as any).lead
+        let conv = await (prisma as any).conversation.findFirst({
+          where: { leadId: existingLead.id, channel: "telegram", boardId },
+        })
+        if (!conv) {
+          conv = await (prisma as any).conversation.create({
+            data: {
+              leadId: existingLead.id,
+              boardId,
+              channel: "telegram",
+              externalId: chatId,
+              status: "ACTIVE",
+              lastMessageAt: timestamp,
+            },
+          })
+        } else {
+          await (prisma as any).conversation.update({
+            where: { id: conv.id },
+            data: { externalId: chatId, lastMessageAt: timestamp },
+          })
+        }
+        await consumeInvite(startParam, conv.id)
+        console.log("[reinvite] channel added to lead", { leadId: existingLead.id, conversationId: conv.id })
+        return NextResponse.json({ ok: true })
       }
     }
 

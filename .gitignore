@@ -13,3 +13,6 @@ skills/
 *.backup
 *.backup2
 .env.local
+playwright-report/
+test-results/
+tests/e2e/.auth/user.json

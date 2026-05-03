@@ -38,7 +38,7 @@ export async function executeStateForConversation(
   const state = conversation.currentState
 
   const isBoardActive =
-    board.adminStatus.toString() !== "SUSPENDED" && board.ownerStatus !== "paused"
+    board.adminStatus.toString() !== "SUSPENDED" && board.ownerStatus !== "INACTIVE"
   if (!isBoardActive) return { skipped: true, reason: "board_inactive" }
 
   // Increment message counter and maybe schedule summarization

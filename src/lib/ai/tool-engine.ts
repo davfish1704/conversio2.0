@@ -9,6 +9,9 @@ import type { BoardBrain, BoardAsset } from "@prisma/client"
 
 // V3 type — not yet in generated client
 type LeadMemory = { key: string; value: string }
+type BrainRuleRow = { id: string; name: string; rule: string; severity: string }
+type BrainFAQRow = { id: string; question: string; answer: string }
+type BrainDocRow = { id: string; name: string; content: string }
 
 // Lazy import to avoid circular deps — tools/index seeds the registry on first import
 let toolsReady = false
@@ -102,7 +105,7 @@ export async function runAgentLoop(
     select: { leadId: true, conversationSummary: true },
   })
 
-  const [memories] = await Promise.all([
+  const [memories, brainRules, brainFAQs, brainDocs, leadConversations] = await Promise.all([
     convForMemory?.leadId
       ? (prisma as any).leadMemory.findMany({
           where: { leadId: convForMemory.leadId },
@@ -110,11 +113,58 @@ export async function runAgentLoop(
           select: { key: true, value: true },
         })
       : Promise.resolve([]),
+    (prisma as any).brainRule.findMany({
+      where: { boardId: ctx.boardId, isActive: true },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, rule: true, severity: true },
+    }),
+    (prisma as any).brainFAQ.findMany({
+      where: { boardId: ctx.boardId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, question: true, answer: true },
+    }),
+    (prisma as any).brainDocument.findMany({
+      where: { boardId: ctx.boardId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, content: true },
+    }),
+    convForMemory?.leadId
+      ? prisma.conversation.findMany({
+          where: { leadId: convForMemory.leadId },
+          select: { channel: true },
+        })
+      : Promise.resolve([]),
   ])
   const convSummaryRow = convForMemory
 
   const contextWindowSize = (board as { contextWindowSize?: number } | null)?.contextWindowSize ?? 20
-  const systemPrompt = buildSystemPrompt(ctx, memories, convSummaryRow?.conversationSummary ?? null)
+  const systemPrompt = buildSystemPrompt(
+    ctx,
+    memories,
+    convSummaryRow?.conversationSummary ?? null,
+    brainRules as BrainRuleRow[],
+    brainFAQs as BrainFAQRow[],
+    brainDocs as BrainDocRow[],
+    (leadConversations as { channel: string }[]).map((c) => c.channel),
+  )
+
+  if (!simulate) {
+    await prisma.executionLog.create({
+      data: {
+        boardId: ctx.boardId,
+        conversationId: ctx.conversationId,
+        stateId: ctx.state.id,
+        action: "BRAIN_CONTEXT_LOADED",
+        status: "SUCCESS",
+        context: {
+          rulesCount: (brainRules as BrainRuleRow[]).length,
+          faqCount: (brainFAQs as BrainFAQRow[]).length,
+          docsCount: (brainDocs as BrainDocRow[]).length,
+          ruleNames: (brainRules as BrainRuleRow[]).map((r) => r.name),
+        },
+      },
+    }).catch(() => {/* non-critical — don't break the loop */})
+  }
 
   const history = await prisma.message.findMany({
     where: { conversationId: ctx.conversationId },
@@ -277,7 +327,11 @@ export async function runAgentLoop(
 function buildSystemPrompt(
   ctx: AgentLoopContext,
   memories: Pick<LeadMemory, "key" | "value">[],
-  conversationSummary: string | null = null
+  conversationSummary: string | null = null,
+  brainRules: BrainRuleRow[] = [],
+  brainFAQs: BrainFAQRow[] = [],
+  brainDocs: BrainDocRow[] = [],
+  leadChannels: string[] = [],
 ): string {
   const parts: string[] = []
 
@@ -286,9 +340,48 @@ function buildSystemPrompt(
   if (ctx.brain.infoPrompt) parts.push(`CONTEXT/KNOWLEDGE: ${ctx.brain.infoPrompt}`)
   if (ctx.brain.rulePrompt) parts.push(`RULES: ${ctx.brain.rulePrompt}`)
 
+  // ── Brain Rules ────────────────────────────────────────────────────────────
+  if (brainRules.length > 0) {
+    parts.push(
+      `## Constraints (Rules)\n${brainRules.map((r) => `- ${r.rule}`).join("\n")}`
+    )
+  }
+
+  // ── Brain FAQs ─────────────────────────────────────────────────────────────
+  if (brainFAQs.length > 0) {
+    parts.push(
+      `## FAQ (use to answer common questions)\n${brainFAQs
+        .map((f) => `Q: ${f.question}\nA: ${f.answer}`)
+        .join("\n\n")}`
+    )
+  }
+
+  // ── Brain Documents ────────────────────────────────────────────────────────
+  if (brainDocs.length > 0) {
+    const MAX_TOTAL_CHARS = 3000
+    let remaining = MAX_TOTAL_CHARS
+    const snippets: string[] = []
+    for (const doc of brainDocs) {
+      if (remaining <= 0) break
+      const snippet = doc.content.slice(0, remaining)
+      snippets.push(`### ${doc.name}\n${snippet}`)
+      remaining -= snippet.length
+    }
+    parts.push(`## Knowledge Base\n${snippets.join("\n\n")}`)
+  }
+
   if (conversationSummary) {
     parts.push(`GESPRÄCHSZUSAMMENFASSUNG (vorherige Nachrichten):\n${conversationSummary}`)
   }
+
+  // ── Channel Context ────────────────────────────────────────────────────────
+  const channelSection = [
+    `- Active channel: ${ctx.channel}`,
+    leadChannels.length > 0 ? `- Lead's channels: ${[...new Set(leadChannels)].join(", ")}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n")
+  parts.push(`## Current Conversation Context\n${channelSection}`)
 
   parts.push(`CURRENT STATE: ${ctx.state.name}`)
   if (ctx.state.mission) parts.push(`MISSION: ${ctx.state.mission}`)

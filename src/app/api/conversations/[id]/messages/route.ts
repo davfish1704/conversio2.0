@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 import { assertConversationOwnership } from "@/lib/auth-helpers"
+import { sendMessage } from "@/lib/messaging/dispatcher"
 
 // GET /api/conversations/[id]/messages
 export async function GET(
@@ -73,6 +74,19 @@ export async function POST(
       where: { id: conversationId },
       data: { lastMessageAt: new Date() },
     })
+
+    if (direction === "OUTBOUND") {
+      const result = await sendMessage(conversationId, content)
+      if (!result.ok) {
+        console.error("[outbound-send] Failed:", result.error)
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { status: "FAILED" },
+        })
+      } else if (result.externalMessageId) {
+        // await prisma.message.update({ where: { id: message.id }, data: { externalId: result.externalMessageId } })
+      }
+    }
 
     return NextResponse.json({ message })
   } catch (error) {

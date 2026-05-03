@@ -1,0 +1,14 @@
+{
+  "id": "session-1777662344027",
+  "startedAt": "2026-05-01T19:05:44.027Z",
+  "cwd": "/Users/tobroe/Desktop/conversio2.0",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "endedAt": "2026-05-01T19:09:58.974Z",
+  "duration": 254948
+}

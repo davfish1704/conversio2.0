@@ -26,10 +26,11 @@ UPDATE "boards" SET "adminStatus" = 'SUSPENDED' WHERE lower("adminStatus") = 'su
 UPDATE "boards" SET "adminStatus" = 'ACTIVE'
   WHERE "adminStatus" NOT IN ('ACTIVE', 'PAUSED', 'SUSPENDED');
 
+ALTER TABLE "boards" ALTER COLUMN "adminStatus" DROP DEFAULT;
 ALTER TABLE "boards"
   ALTER COLUMN "adminStatus" TYPE "BoardAdminStatus"
-    USING "adminStatus"::"BoardAdminStatus",
-  ALTER COLUMN "adminStatus" SET DEFAULT 'ACTIVE';
+    USING "adminStatus"::"BoardAdminStatus";
+ALTER TABLE "boards" ALTER COLUMN "adminStatus" SET DEFAULT 'ACTIVE'::"BoardAdminStatus";
 
 -- ----------------------------------------
 -- 3. boards.ownerStatus TEXT → BoardOwnerStatus
@@ -41,10 +42,11 @@ UPDATE "boards" SET "ownerStatus" = 'TRIAL'    WHERE lower("ownerStatus") = 'tri
 UPDATE "boards" SET "ownerStatus" = 'ACTIVE'
   WHERE "ownerStatus" NOT IN ('ACTIVE', 'INACTIVE', 'TRIAL');
 
+ALTER TABLE "boards" ALTER COLUMN "ownerStatus" DROP DEFAULT;
 ALTER TABLE "boards"
   ALTER COLUMN "ownerStatus" TYPE "BoardOwnerStatus"
-    USING "ownerStatus"::"BoardOwnerStatus",
-  ALTER COLUMN "ownerStatus" SET DEFAULT 'ACTIVE';
+    USING "ownerStatus"::"BoardOwnerStatus";
+ALTER TABLE "boards" ALTER COLUMN "ownerStatus" SET DEFAULT 'ACTIVE'::"BoardOwnerStatus";
 
 -- ----------------------------------------
 -- 4. jobs.status TEXT → JobStatus
@@ -57,22 +59,24 @@ UPDATE "jobs" SET "status" = UPPER("status")
 UPDATE "jobs" SET "status" = 'PENDING'
   WHERE "status" NOT IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED');
 
+ALTER TABLE "jobs" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "jobs"
   ALTER COLUMN "status" TYPE "JobStatus"
-    USING "status"::"JobStatus",
-  ALTER COLUMN "status" SET DEFAULT 'PENDING';
+    USING "status"::"JobStatus";
+ALTER TABLE "jobs" ALTER COLUMN "status" SET DEFAULT 'PENDING'::"JobStatus";
 
 -- ----------------------------------------
 -- 5. admin_reports: ReportType → AlertType, ReportStatus → AlertStatus
 --    Werte sind identisch, nur der Enum-Name ändert sich.
 -- ----------------------------------------
 
+ALTER TABLE "admin_reports" ALTER COLUMN "status" DROP DEFAULT;
 ALTER TABLE "admin_reports"
   ALTER COLUMN "type"   TYPE "AlertType"
     USING "type"::TEXT::"AlertType",
   ALTER COLUMN "status" TYPE "AlertStatus"
-    USING "status"::TEXT::"AlertStatus",
-  ALTER COLUMN "status" SET DEFAULT 'OPEN';
+    USING "status"::TEXT::"AlertStatus";
+ALTER TABLE "admin_reports" ALTER COLUMN "status" SET DEFAULT 'OPEN'::"AlertStatus";
 
 -- ----------------------------------------
 -- 6. Alte Enums droppen (nicht mehr referenziert)

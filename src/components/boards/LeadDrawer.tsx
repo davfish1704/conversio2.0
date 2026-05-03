@@ -715,7 +715,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                         <div className="fixed inset-0 z-10" onClick={() => setShowChannelDropdown(false)} />
                         <div className="absolute left-0 top-8 z-20 w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg py-1">
                           {boardChannels
-                            .filter((bc) => !conversations.some((c) => c.channel === bc.platform))
+                            .filter((bc) => {
+                              const hasConversation = conversations.some((c) => c.channel === bc.platform)
+                              const hasPendingInvite = pendingInvites.some((inv) => inv.targetChannelId === bc.id)
+                              return !hasConversation && !hasPendingInvite
+                            })
                             .map((bc) => (
                               <button
                                 key={bc.id}
@@ -726,7 +730,11 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                                 <span>{bc.platform === "telegram" ? "Telegram" : bc.platform === "whatsapp" ? "WhatsApp" : bc.platform}</span>
                               </button>
                             ))}
-                          {boardChannels.filter((bc) => !conversations.some((c) => c.channel === bc.platform)).length === 0 && (
+                          {boardChannels.filter((bc) => {
+                            const hasConversation = conversations.some((c) => c.channel === bc.platform)
+                            const hasPendingInvite = pendingInvites.some((inv) => inv.targetChannelId === bc.id)
+                            return !hasConversation && !hasPendingInvite
+                          }).length === 0 && (
                             <p className="px-3 py-2 text-xs text-gray-400">Alle Channels bereits verknüpft</p>
                           )}
                         </div>

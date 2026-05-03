@@ -37,7 +37,7 @@ const CHANNEL_COLORS = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  ACTIVE: "#10B981", CLOSED: "#6B7280", ARCHIVED: "#F59E0B", FROZEN: "#EF4444",
+  Active: "#10B981", Frozen: "#EF4444", CLOSED: "#6B7280", ARCHIVED: "#F59E0B",
 }
 
 function formatShortDate(dateStr: string) {
@@ -115,10 +115,12 @@ function DashboardContent() {
           channelMap.set(source, (channelMap.get(source) || 0) + 1)
         })
 
+        // Status map - using aiEnabled/frozen instead of old status field
         const statusMap = new Map<string, number>()
-        allLeads.forEach((c) => {
-          statusMap.set(c.status, (statusMap.get(c.status) || 0) + 1)
-        })
+        const activeCount = allLeads.filter((c) => c.aiEnabled !== false && c.frozen !== true).length
+        const frozenCount = allLeads.filter((c) => c.frozen === true).length
+        statusMap.set("Active", activeCount)
+        if (frozenCount > 0) statusMap.set("Frozen", frozenCount)
 
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
@@ -131,7 +133,7 @@ function DashboardContent() {
           })),
           status: Array.from(statusMap.entries()).map(([name, value]) => ({ name, value })),
           totalLeads: allLeads.length,
-          activeLeads: allLeads.filter((c) => c.status === "ACTIVE").length,
+          activeLeads: allLeads.filter((c) => c.aiEnabled !== false && c.frozen !== true).length,
           newThisWeek: allLeads.filter((c) => c.createdAt && new Date(c.createdAt) >= sevenDaysAgo).length,
         })
       })
@@ -168,277 +170,274 @@ function DashboardContent() {
     )
   }
 
-  // BOARD DETAIL VIEW
-  if (selectedBoard) {
-    return (
-      <div className="space-y-6">
+  const activeBoards = boards.filter((b) => b.isActive)
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
+            {selectedBoard && (
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedBoard.name}</h1>
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                {boardStats?.totalLeads ?? 0} Leads · {boardStats?.activeLeads ?? 0} {t('dashboard.boardsActive')}
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <LayoutDashboard className="w-6 h-6" />
+                {selectedBoard ? selectedBoard.name : t("nav.dashboard") || "Dashboard"}
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                {selectedBoard
+                  ? `${boardStats?.totalLeads || 0} ${t("common.leads")} · ${boardStats?.activeLeads || 0} ${t("common.active")}`
+                  : `${boards.length} ${t("nav.boards")} · ${activeBoards.length} ${t("common.active")}`
+                }
               </p>
             </div>
           </div>
-          <Link
-            href={`/boards/${selectedBoard.id}`}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition"
-          >
-            <Kanban className="w-4 h-4" />
-            Pipeline
-          </Link>
+          {selectedBoard ? (
+            <Link
+              href={`/boards/${selectedBoard.id}`}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Kanban className="w-4 h-4" />
+              {t("nav.pipeline")}
+            </Link>
+          ) : (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              {t("common.newBoard")}
+            </button>
+          )}
         </div>
 
-        {/* Stats Cards */}
-        {boardStats && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.totalLeads')}</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{boardStats.totalLeads}</p>
-              <div className="flex items-center gap-1 mt-2 text-xs text-emerald-600">
-                <TrendingUp className="w-3 h-3" />
-                <span>+{boardStats.newThisWeek} {t('dashboard.thisWeek')}</span>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.activeLeads')}</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{boardStats.activeLeads}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                {boardStats.totalLeads > 0 ? Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100) : 0}{t('dashboard.ofTotal')}
-              </p>
-            </div>
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">States</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{selectedBoard._count?.states || 0}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{t('dashboard.pipelineStages')}</p>
-            </div>
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-5 shadow-sm transition-colors">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Members</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{selectedBoard._count?.members || 0}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{t('dashboard.teamMembers')}</p>
-            </div>
+        {/* Board List OR Board Stats */}
+        {!selectedBoard ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {boards.map((board) => (
+              <Link
+                key={board.id}
+                href={`/dashboard?board=${board.id}`}
+                className="block p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{board.name}</h3>
+                  <span
+                    className={`px-2 py-0.5 text-xs rounded-full ${
+                      board.isActive
+                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                    }`}
+                  >
+                    {board.isActive ? t("common.active") : t("common.inactive")}
+                  </span>
+                </div>
+                {board.description && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{board.description}</p>
+                )}
+                <div className="grid grid-cols-3 gap-4 text-center pt-4 border-t border-gray-100 dark:border-gray-800">
+                  <div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("nav.states")}</div>
+                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {board._count?.states || 0}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("common.leads")}</div>
+                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {board._count?.conversations || 0}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      <Users className="w-4 h-4 mx-auto" />
+                    </div>
+                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {board._count?.members || 0}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
-        )}
-
-        {/* Charts */}
-        {boardStats && boardStats.daily.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Lead Volume */}
-            <div className="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-6">
-                <BarChart3 className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.leadVolume')}</h2>
+        ) : boardStats ? (
+          <>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3 mb-2">
+                  <BarChart3 className="w-5 h-5 text-blue-600" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t("dashboard.totalLeads")}</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{boardStats.totalLeads}</p>
+                <p className="text-sm text-green-600 dark:text-green-400 mt-2">
+                  <TrendingUp className="w-4 h-4 inline mr-1" />
+                  +{boardStats.newThisWeek} {t("dashboard.thisWeek")}
+                </p>
               </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
+
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("common.active")}</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{boardStats.activeLeads}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  {boardStats.totalLeads > 0
+                    ? `${Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100)}% ${t("dashboard.ofTotal")}`
+                    : "0% of total"}
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("nav.states")}</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.states || 0}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.pipelineStages")}</p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("common.members")}</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.members || 0}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.teamMembers")}</p>
+              </div>
+            </div>
+
+            {/* Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Lead Volume Chart */}
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.leadVolume")}</h3>
+                </div>
+                <ResponsiveContainer width="100%" height={200}>
                   <AreaChart data={boardStats.daily}>
                     <defs>
-                      <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
                         <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-                    <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#374151" : "#E5E7EB"} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={formatShortDate}
+                      stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"}
+                      style={{ fontSize: "12px" }}
+                    />
+                    <YAxis stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
                     <Tooltip contentStyle={tooltipStyle} />
-                    <Area type="monotone" dataKey="count" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorCount)" />
+                    <Area type="monotone" dataKey="count" stroke="#3B82F6" fillOpacity={1} fill="url(#colorLeads)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
 
-            {/* Channel */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 p-6 shadow-sm transition-colors">
-              <div className="flex items-center gap-2 mb-6">
-                <PieIcon className="w-5 h-5 text-violet-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.byChannel')}</h2>
-              </div>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
+              {/* By Channel Chart */}
+              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-4">
+                  <PieIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+                  <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.byChannel")}</h3>
+                </div>
+                <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
-                    <Pie data={boardStats.channel} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
+                    <Pie
+                      data={boardStats.channel}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
                       {boardStats.channel.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={CHANNEL_COLORS[entry.name as keyof typeof CHANNEL_COLORS] || "#9CA3AF"} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={CHANNEL_COLORS[entry.name as keyof typeof CHANNEL_COLORS] || CHANNEL_COLORS.unknown}
+                        />
                       ))}
                     </Pie>
                     <Tooltip contentStyle={tooltipStyle} />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" iconSize={8} />
+                    <Legend wrapperStyle={{ fontSize: "12px" }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Status */}
-            <div className="lg:col-span-3 bg-white dark:bg-gray-900 rounded-xl transition-colors border border-gray-100 dark:border-gray-800 p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-6">
-                <BarChart3 className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.statusOverview')}</h2>
+            {/* Status Overview */}
+            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+                <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.statusOverview")}</h3>
               </div>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={boardStats.status} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
-                    <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: "#4B5563" }} axisLine={false} tickLine={false} width={80} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
-                      {boardStats.status.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || "#9CA3AF"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={boardStats.status}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#374151" : "#E5E7EB"} />
+                  <XAxis dataKey="name" stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
+                  <YAxis stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                    {boardStats.status.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || "#9CA3AF"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // BOARDS OVERVIEW (default view)
-  return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <LayoutDashboard className="w-6 h-6 text-blue-600" />
-            Dashboard
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">{boards.length} Boards · {boards.filter(b => b.isActive).length} {t('dashboard.boardsActive')}</p>
-        </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          {t('dashboard.newBoard')}
-        </button>
+          </>
+        ) : null}
       </div>
 
-      {/* Boards Grid */}
-      {boards.length === 0 ? (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-12 text-center transition-colors">
-          <div className="w-16 h-16 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-            <LayoutDashboard className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">{t('dashboard.noBoardsTitle')}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
-            {t('dashboard.noBoardsDesc')}
-          </p>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="mt-4 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition"
-          >
-            {t('dashboard.createFirstBoard')}
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {boards.map((board) => (
-            <div
-              key={board.id}
-              onClick={() => router.push(`/dashboard?board=${board.id}`)}
-              className="group bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-blue-300 transition-all hover:shadow-md p-6 cursor-pointer"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors truncate">
-                  {board.name}
-                </h2>
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${
-                    board.isActive
-                      ? "bg-green-50 text-green-700 border border-green-200"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700"
-                  }`}
-                >
-                  {board.isActive ? t('dashboard.active') : t('dashboard.inactive')}
-                </span>
-              </div>
-
-              {board.description && (
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{board.description}</p>
-              )}
-
-              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-3 gap-3">
-                <div>
-                  <p className="text-xs text-gray-500">States</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{board._count?.states || 0}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Leads</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{board._count?.conversations || 0}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">
-                    <Users className="w-3 h-3 inline mr-0.5" />
-                  </p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{board._count?.members || 0}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center text-sm text-blue-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                {t('dashboard.viewDetails')} <ChevronRight className="w-4 h-4 ml-1" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Create Modal */}
+      {/* Create Board Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl transition-colors w-full max-w-md mx-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.createBoardTitle')}</h2>
-            <form onSubmit={createBoard} className="mt-4 space-y-4">
-              {formError && (
-                <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{formError}</div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('dashboard.boardName')}</label>
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">{t("common.newBoard")}</h2>
+            <form onSubmit={createBoard}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t("common.name")}
+                </label>
                 <input
                   type="text"
                   value={newBoardName}
                   onChange={(e) => setNewBoardName(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                   required
-                  placeholder={t('dashboard.boardNamePlaceholder')}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('dashboard.boardDescription')}</label>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  {t("common.description")}
+                </label>
                 <textarea
                   value={newBoardDesc}
                   onChange={(e) => setNewBoardDesc(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                   rows={3}
-                  placeholder={t('dashboard.descriptionOptional')}
                 />
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+              {formError && <p className="text-sm text-red-600 mb-4">{formError}</p>}
+              <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  onClick={() => { setIsModalOpen(false); setFormError("") }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+                  onClick={() => {
+                    setIsModalOpen(false)
+                    setFormError("")
+                  }}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                 >
-                  {t('dashboard.cancel')}
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={formLoading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {formLoading ? t('dashboard.creating') : t('dashboard.create')}
+                  {formLoading ? t("common.creating") : t("common.create")}
                 </button>
               </div>
             </form>
@@ -451,11 +450,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    }>
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
       <DashboardContent />
     </Suspense>
   )
