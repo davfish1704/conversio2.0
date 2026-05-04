@@ -16,3 +16,9 @@ export async function POST(req: NextRequest) {
   const processed = await processNextBatch(20)
   return NextResponse.json({ ok: true, processed })
 }
+
+
+// Vercel Cron calls GET
+export async function GET(req: NextRequest) {
+  return POST(req)
+}
