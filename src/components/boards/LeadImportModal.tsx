@@ -123,6 +123,14 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
 
   const handleCreateManual = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Telegram: Lead wird vom Webhook erstellt — Modal nur schließen
+    if (manualLead.channel === "telegram" && tgInvite) {
+      onSuccess()
+      onClose()
+      return
+    }
+
     if (manualLead.channel === "whatsapp" && !manualLead.phone) return
 
     setIsCreating(true)
@@ -412,14 +420,17 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
 
                 {/* Name (always) */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.name")} *</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {t("common.name")}{manualLead.channel !== "telegram" && " *"}
+                    {manualLead.channel === "telegram" && " (optional)"}
+                  </label>
                   <input
                     type="text"
                     value={manualLead.name}
                     onChange={(e) => setManualLead({ ...manualLead, name: e.target.value })}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Max Mustermann"
-                    required
+                    required={manualLead.channel !== "telegram"}
                   />
                 </div>
 
@@ -477,10 +488,19 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
 
                 <button
                   type="submit"
-                  disabled={isCreating || (manualLead.channel === "whatsapp" && !manualLead.phone) || !manualLead.name.trim()}
+                  disabled={
+                    isCreating ||
+                    (manualLead.channel === "whatsapp" && !manualLead.phone) ||
+                    (manualLead.channel !== "telegram" && !manualLead.name.trim()) ||
+                    (manualLead.channel === "telegram" && !tgInvite && !manualLead.name.trim())
+                  }
                   className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {isCreating ? t("leadImport.saving") : t("leadImport.saveLead")}
+                  {isCreating
+                    ? t("leadImport.saving")
+                    : manualLead.channel === "telegram" && tgInvite
+                    ? "Fertig"
+                    : t("leadImport.saveLead")}
                 </button>
               </form>
 
