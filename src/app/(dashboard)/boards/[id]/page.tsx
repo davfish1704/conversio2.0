@@ -11,17 +11,6 @@ import { type Lead } from "@/components/boards/LeadCard"
 import { useContext } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
 
-interface State {
-  id: string
-  name: string
-  type: string
-  mission: string | null
-  rules: string | null
-  orderIndex: number
-  nextStateId: string | null
-  config: Record<string, unknown> | null
-}
-
 interface PipelineState {
   id: string
   name: string
@@ -41,7 +30,6 @@ export default function BoardPipelinePage() {
   const { id } = useParams() as { id: string }
   const { t } = useContext(LanguageContext)
   const [board, setBoard] = useState<Board | null>(null)
-  const [states, setStates] = useState<State[]>([])
   const [pipelineStates, setPipelineStates] = useState<PipelineState[]>([])
   const [unassignedLeads, setUnassignedLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,21 +48,23 @@ export default function BoardPipelinePage() {
     setLoading(true)
     setNotFound(false)
     try {
-      const [boardRes, statesRes, pipelineRes] = await Promise.all([
+      const [boardRes, pipelineRes] = await Promise.all([
         fetch(`/api/boards/${id}`, { signal: controller.signal }),
-        fetch(`/api/boards/${id}/states`, { signal: controller.signal }),
         fetch(`/api/crm/pipeline?boardId=${id}`, { signal: controller.signal }),
       ])
       if (boardRes.status === 404 || boardRes.status === 403) {
         setNotFound(true)
+        // Clear stale nav pointer so the CRM dropdown stops linking to a dead board
+        if (typeof window !== "undefined") {
+          const stored = localStorage.getItem("crm_last_board_id")
+          if (stored === id) localStorage.removeItem("crm_last_board_id")
+        }
         return
       }
-      if (!boardRes.ok || !statesRes.ok || !pipelineRes.ok) throw new Error("Fetch failed")
+      if (!boardRes.ok || !pipelineRes.ok) throw new Error("Fetch failed")
       const boardData = await boardRes.json()
-      const statesData = await statesRes.json()
       const pipelineData = await pipelineRes.json()
       setBoard(boardData.board || boardData)
-      setStates(statesData.states || [])
       setPipelineStates(pipelineData.states || [])
       setUnassignedLeads(pipelineData.unassignedLeads || [])
     } catch (err) {
@@ -121,7 +111,7 @@ export default function BoardPipelinePage() {
           </div>
         </div>
 
-        {states.length === 0 && unassignedLeads.length === 0 ? (
+        {pipelineStates.length === 0 && unassignedLeads.length === 0 ? (
           <EmptyStateCard boardId={id} onImportClick={() => setShowImportModal(true)} />
         ) : (
           <PipelineBoard

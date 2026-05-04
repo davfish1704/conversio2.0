@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useContext } from "react"
+import { useContext, useEffect } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
 
 interface Board {
@@ -20,6 +20,10 @@ export default function BoardTabs({ board }: BoardTabsProps) {
   const { t } = useContext(LanguageContext)
   const pathname = usePathname()
   const { id } = board
+
+  useEffect(() => {
+    localStorage.setItem("crm_last_board_id", id)
+  }, [id])
 
   const tabs = [
     { key: "pipeline", label: t("nav.pipeline") || "Pipeline", href: `/boards/${id}` },

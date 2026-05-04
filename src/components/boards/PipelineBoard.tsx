@@ -17,6 +17,8 @@ import KanbanColumn from "./KanbanColumn"
 import LeadDrawer from "./LeadDrawer"
 import { type Lead } from "./LeadCard"
 
+const UNASSIGNED_COL_ID = "__unassigned__"
+
 interface PipelineState {
   id: string
   name: string
@@ -32,8 +34,9 @@ interface PipelineBoardProps {
   onRefresh: () => void
 }
 
-export default function PipelineBoard({ states: initialStates, boardId, onRefresh }: PipelineBoardProps) {
+export default function PipelineBoard({ states: initialStates, unassignedLeads: initialUnassigned, boardId, onRefresh }: PipelineBoardProps) {
   const [states, setStates] = useState<PipelineState[]>(initialStates)
+  const [unassigned, setUnassigned] = useState<Lead[]>(initialUnassigned)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -53,7 +56,8 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
       }
       return prev
     })
-  }, [initialStates])
+    setUnassigned(initialUnassigned)
+  }, [initialStates, initialUnassigned])
 
   const stateOptions = states.map((s) => ({ id: s.id, name: s.name }))
 
@@ -88,9 +92,11 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
     const leadId = event.active.id as string
     for (const state of states) {
       const lead = state.leads.find((l) => l.id === leadId)
-      if (lead) { setActiveLead(lead); break }
+      if (lead) { setActiveLead(lead); return }
     }
-  }, [states])
+    const uLead = unassigned.find((l) => l.id === leadId)
+    if (uLead) setActiveLead(uLead)
+  }, [states, unassigned])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -100,6 +106,7 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
     const leadId = active.id as string
     const overId = over.id as string
 
+    // Find target state (only real state columns accepted as drop targets)
     let targetStateId: string | null = null
     for (const state of states) {
       if (state.id === overId) { targetStateId = state.id; break }
@@ -107,21 +114,37 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
     }
     if (!targetStateId) return
 
+    // Find source
     let sourceStateId: string | null = null
     let movedLead: Lead | null = null
+
     for (const state of states) {
       const lead = state.leads.find((l) => l.id === leadId)
       if (lead) { sourceStateId = state.id; movedLead = lead; break }
     }
+    if (!movedLead) {
+      const uLead = unassigned.find((l) => l.id === leadId)
+      if (uLead) { sourceStateId = null; movedLead = uLead }
+    }
     if (!movedLead || sourceStateId === targetStateId) return
 
-    setStates((prev) =>
-      prev.map((state) => {
-        if (state.id === sourceStateId) return { ...state, leads: state.leads.filter((l) => l.id !== leadId) }
-        if (state.id === targetStateId) return { ...state, leads: [...state.leads, { ...movedLead!, currentStateId: targetStateId! }] }
-        return state
-      })
-    )
+    // Optimistic update
+    if (sourceStateId === null) {
+      setUnassigned((prev) => prev.filter((l) => l.id !== leadId))
+      setStates((prev) => prev.map((s) =>
+        s.id === targetStateId
+          ? { ...s, leads: [...s.leads, { ...movedLead!, currentStateId: targetStateId }] }
+          : s
+      ))
+    } else {
+      setStates((prev) =>
+        prev.map((state) => {
+          if (state.id === sourceStateId) return { ...state, leads: state.leads.filter((l) => l.id !== leadId) }
+          if (state.id === targetStateId) return { ...state, leads: [...state.leads, { ...movedLead!, currentStateId: targetStateId! }] }
+          return state
+        })
+      )
+    }
 
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -138,15 +161,9 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return
       console.error("Drag update failed:", error)
-      setStates((prev) =>
-        prev.map((state) => {
-          if (state.id === sourceStateId) return { ...state, leads: [...state.leads, movedLead!] }
-          if (state.id === targetStateId) return { ...state, leads: state.leads.filter((l) => l.id !== leadId) }
-          return state
-        })
-      )
+      onRefresh()
     }
-  }, [states])
+  }, [states, unassigned, onRefresh])
 
   return (
     <div className="h-full">
@@ -157,6 +174,16 @@ export default function PipelineBoard({ states: initialStates, boardId, onRefres
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-4 overflow-x-auto min-h-[400px] pb-2">
+          {unassigned.length > 0 && (
+            <KanbanColumn
+              id={UNASSIGNED_COL_ID}
+              name="Eingehend"
+              leads={unassigned}
+              states={stateOptions}
+              onStateChange={handleStateChange}
+              onLeadClick={handleLeadClick}
+            />
+          )}
           {states.map((state) => (
             <KanbanColumn
               key={state.id}
