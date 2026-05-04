@@ -126,6 +126,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
   const [inviteData, setInviteData] = useState<InviteData | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { t, language } = useContext(LanguageContext)
 
@@ -369,6 +371,22 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
     setAiEnabled(!aiEnabled)
   }
 
+  const handleDeleteLead = async () => {
+    if (!lead) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/leads/${lead.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Delete failed")
+      setShowDeleteConfirm(false)
+      onClose()
+      onUpdate()
+    } catch (err) {
+      console.error("Delete lead error:", err)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   if (!lead) return null
 
   const needsTelegramInvite = lead.channel === "telegram" && !(lead as any).externalId && !(lead as any).conversationId
@@ -420,6 +438,16 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               }`}
             >
               {isFrozen ? "❄️ Frozen" : "Freeze"}
+            </button>
+
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
+              title="Lead löschen"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
             </button>
 
             <button
@@ -928,6 +956,34 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
           </div>
         </div>
       </div>
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Lead löschen?</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              <strong>{lead.name || lead.phone}</strong> wird unwiderruflich gelöscht — inkl. aller Nachrichten und Daten.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleDeleteLead}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {isDeleting ? "Löschen…" : "Endgültig löschen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Channel invite modal */}
       {channelModalOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">

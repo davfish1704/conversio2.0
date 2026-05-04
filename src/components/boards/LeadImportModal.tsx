@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useContext } from "react"
+import { useState, useCallback, useEffect, useContext, useRef } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
 
 interface LeadImportModalProps {
@@ -12,6 +12,13 @@ interface LeadImportModalProps {
 
 type ImportTab = "file" | "api"
 
+interface TgInvite {
+  deepLink: string
+  qrUrl: string
+  token: string
+  expiresAt: string
+}
+
 export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }: LeadImportModalProps) {
   const [activeTab, setActiveTab] = useState<ImportTab>("file")
   const [file, setFile] = useState<File | null>(null)
@@ -19,7 +26,67 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
   const [isUploading, setIsUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ imported: number; errors: string[] } | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+
+  // Telegram invite state
+  const [tgInvite, setTgInvite] = useState<TgInvite | null>(null)
+  const [tgInviteLoading, setTgInviteLoading] = useState(false)
+  const [tgInviteError, setTgInviteError] = useState<string | null>(null)
+  const [tgCopied, setTgCopied] = useState(false)
+  const tgAttempted = useRef(false)
+
   const { t } = useContext(LanguageContext)
+
+  const generateTgInvite = useCallback(async () => {
+    setTgInviteLoading(true)
+    setTgInvite(null)
+    setTgInviteError(null)
+    try {
+      const chRes = await fetch(`/api/boards/${boardId}/channels`)
+      const chData = await chRes.json()
+      const tgChannel = (chData.channels || []).find(
+        (c: { platform: string; status: string }) => c.platform === "telegram" && c.status === "connected"
+      )
+      if (!tgChannel) {
+        setTgInviteError("Kein Telegram-Bot verbunden. Verbinde zuerst einen Bot unter Einstellungen → Kanäle.")
+        return
+      }
+      const invRes = await fetch(`/api/boards/${boardId}/acquisition-invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetChannelId: tgChannel.id }),
+      })
+      const invData = await invRes.json()
+      if (!invRes.ok) {
+        setTgInviteError(invData.error || "Deeplink konnte nicht generiert werden.")
+        return
+      }
+      setTgInvite(invData)
+    } catch {
+      setTgInviteError("Fehler beim Generieren des Links.")
+    } finally {
+      setTgInviteLoading(false)
+    }
+  }, [boardId])
+
+  // Auto-generate once when Telegram is selected; ref prevents retry loop on failure
+  useEffect(() => {
+    if (manualLead.channel !== "telegram") {
+      tgAttempted.current = false
+      return
+    }
+    if (!tgAttempted.current) {
+      tgAttempted.current = true
+      generateTgInvite()
+    }
+  }, [manualLead.channel, generateTgInvite])
+
+  const handleChannelChange = (ch: "whatsapp" | "telegram" | "manual") => {
+    setManualLead({ ...manualLead, channel: ch })
+    if (ch !== "telegram") {
+      setTgInvite(null)
+      setTgInviteError(null)
+    }
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
@@ -81,6 +148,13 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
     } finally {
       setIsCreating(false)
     }
+  }
+
+  const copyTgLink = () => {
+    if (!tgInvite) return
+    navigator.clipboard.writeText(tgInvite.deepLink)
+    setTgCopied(true)
+    setTimeout(() => setTgCopied(false), 2000)
   }
 
   const downloadTemplate = () => {
@@ -224,7 +298,7 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
                         <button
                           key={ch}
                           type="button"
-                          onClick={() => setManualLead({ ...manualLead, channel: ch })}
+                          onClick={() => handleChannelChange(ch)}
                           className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border text-sm font-medium transition ${
                             manualLead.channel === ch
                               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
@@ -238,6 +312,103 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
                     })}
                   </div>
                 </div>
+
+                {/* Telegram: deeplink FIRST, then optional form */}
+                {manualLead.channel === "telegram" && (
+                  <div className="space-y-3">
+                    {/* Deeplink box */}
+                    <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">✈️</span>
+                        <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Telegram-Einladungslink</p>
+                      </div>
+
+                      {tgInviteLoading && (
+                        <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Generiere Link…
+                        </div>
+                      )}
+
+                      {tgInviteError && (
+                        <div className="space-y-2">
+                          <p className="text-xs text-red-600 dark:text-red-400">{tgInviteError}</p>
+                          <button
+                            type="button"
+                            onClick={() => { tgAttempted.current = false; generateTgInvite() }}
+                            className="text-xs text-blue-700 dark:text-blue-300 underline"
+                          >
+                            Erneut versuchen
+                          </button>
+                        </div>
+                      )}
+
+                      {tgInvite && (
+                        <div className="space-y-3">
+                          {/* Link row */}
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-xs bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 px-2 py-1.5 rounded-lg truncate text-gray-700 dark:text-gray-300">
+                              {tgInvite.deepLink}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={copyTgLink}
+                              className="shrink-0 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                            >
+                              {tgCopied ? "✓ Kopiert" : "Kopieren"}
+                            </button>
+                          </div>
+
+                          {/* QR code */}
+                          <div className="flex items-start gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={tgInvite.qrUrl}
+                              alt="QR-Code"
+                              width={80}
+                              height={80}
+                              className="rounded-lg border border-blue-200 dark:border-blue-700 bg-white"
+                            />
+                            <div className="space-y-1">
+                              <p className="text-xs text-blue-700 dark:text-blue-300">
+                                Sende den Link oder QR-Code an den Lead. Sobald er dem Bot schreibt, erscheint er in der Pipeline.
+                              </p>
+                              <p className="text-xs text-blue-500 dark:text-blue-500">
+                                Gültig bis {new Date(tgInvite.expiresAt).toLocaleDateString("de-DE")}
+                              </p>
+                              <a
+                                href={tgInvite.qrUrl}
+                                download="telegram-invite-qr.png"
+                                className="inline-block text-xs text-blue-700 dark:text-blue-300 underline"
+                              >
+                                QR herunterladen
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Optional: Lead-Datensatz jetzt anlegen (z.B. für Notizen).
+                    </p>
+
+                    {/* Optional phone */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.phone")} (optional)</label>
+                      <input
+                        type="tel"
+                        value={manualLead.phone}
+                        onChange={(e) => setManualLead({ ...manualLead, phone: e.target.value })}
+                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="+4915731329868 (für interne Notiz)"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Name (always) */}
                 <div>
@@ -264,27 +435,6 @@ export default function LeadImportModal({ isOpen, onClose, boardId, onSuccess }:
                       placeholder="+4915731329868"
                       required
                     />
-                  </div>
-                )}
-
-                {/* Telegram: optional phone + info */}
-                {manualLead.channel === "telegram" && (
-                  <div className="space-y-2">
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                      <p className="text-xs text-blue-700 dark:text-blue-300">
-                        ✈️ Telegram-Bots können erst schreiben, nachdem der Lead dem Bot eine Nachricht sendet. Du erhältst einen Einladungslink, sobald der Lead erstellt wurde.
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">{t("common.phone")} (optional)</label>
-                      <input
-                        type="tel"
-                        value={manualLead.phone}
-                        onChange={(e) => setManualLead({ ...manualLead, phone: e.target.value })}
-                        className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="+4915731329868 (für interne Notiz)"
-                      />
-                    </div>
                   </div>
                 )}
 

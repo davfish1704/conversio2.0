@@ -18,7 +18,9 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     return NextResponse.json({ error: "Not configured" }, { status: 404 })
   }
   if (channel.telegramWebhookSecret && secretHeader !== channel.telegramWebhookSecret) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    // Return 200 to stop Telegram from retrying; invalid secret = silently drop
+    console.warn("[telegram-webhook] Invalid secret token, dropping request for board", boardId)
+    return NextResponse.json({ ok: true })
   }
 
   // Check board active status

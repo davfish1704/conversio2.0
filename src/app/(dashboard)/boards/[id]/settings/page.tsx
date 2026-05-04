@@ -178,7 +178,7 @@ export default function BoardSettingsPage() {
     setSaving(true)
     try {
       const res = await fetch(`/api/boards/${id}`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: boardName, description: boardDesc, isActive: boardActive }),
       })
@@ -219,6 +219,11 @@ export default function BoardSettingsPage() {
     try {
       const res = await fetch(`/api/boards/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Delete failed")
+      // Remove stale nav pointer so CRM dropdown doesn't keep linking to this board
+      if (typeof window !== "undefined") {
+        const stored = localStorage.getItem("crm_last_board_id")
+        if (stored === id) localStorage.removeItem("crm_last_board_id")
+      }
       toast({ title: "Board gelöscht" })
       router.push("/dashboard")
     } catch {

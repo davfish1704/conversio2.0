@@ -88,8 +88,17 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  await prisma.board.delete({
-    where: { id: params.id },
+  // ExecutionLog → Conversation has no onDelete cascade; must clean up manually
+  await prisma.$transaction(async (tx) => {
+    const convIds = await tx.conversation
+      .findMany({ where: { boardId: params.id }, select: { id: true } })
+      .then((rows) => rows.map((r) => r.id))
+
+    if (convIds.length > 0) {
+      await tx.executionLog.deleteMany({ where: { conversationId: { in: convIds } } })
+    }
+
+    await tx.board.delete({ where: { id: params.id } })
   })
 
   return NextResponse.json({ success: true })

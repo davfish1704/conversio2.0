@@ -62,7 +62,7 @@ export default function TopNavigation({ user }: TopNavigationProps) {
 
   useEffect(() => {
     const saved = localStorage.getItem("crm_last_board_id")
-    if (saved) setLastBoardId(saved)
+    setLastBoardId(saved)
   }, [pathname])
 
   const getBoardSubLink = (subPath: string) => {
