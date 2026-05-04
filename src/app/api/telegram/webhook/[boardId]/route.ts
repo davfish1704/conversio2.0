@@ -118,6 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
               externalId: chatId,
               status: "ACTIVE",
               lastMessageAt: timestamp,
+              currentStateId: defaultState?.id ?? null,
             },
           })
 
@@ -247,6 +248,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
           status: "ACTIVE",
           externalId: chatId,
           lastMessageAt: timestamp,
+          currentStateId: (defaultBoard as any)?.states?.[0]?.id ?? null,
         },
       })
     } else {
@@ -264,6 +266,7 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
             status: "ACTIVE",
             externalId: chatId,
             lastMessageAt: timestamp,
+            currentStateId: lead.currentStateId ?? null,
           },
         })
       } else {

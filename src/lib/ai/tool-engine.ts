@@ -195,8 +195,11 @@ export async function runAgentLoop(
 
     result.toolCallCount += response.toolCalls.length
 
+    console.log(`[agent-loop] iter=${iteration} finishReason=${response.finishReason} contentLen=${response.content?.length ?? 0} toolCalls=${response.toolCalls.length}`)
+
     if (response.finishReason === "stop") {
       if (response.content) {
+        console.log(`[agent-loop] sending reply: "${response.content.slice(0, 80)}..."`)
         if (!simulate) {
           await prisma.message.create({
             data: {

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db"
 import { runAgentLoop, type AgentLoopContext } from "@/lib/ai/tool-engine"
-import { transitionState } from "@/lib/state-machine"
+import { transitionState, getCurrentState } from "@/lib/state-machine"
 import { createNotification } from "@/lib/notifications"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
@@ -30,12 +30,14 @@ export async function executeStateForConversation(
 
   if (!conversation) return { skipped: true, reason: "conversation_not_found" }
   if (!conversation.board) return { skipped: true, reason: "board_not_found" }
-  if (!conversation.currentState) return { skipped: true, reason: "no_current_state" }
   if (conversation.frozen) return { skipped: true, reason: "conversation_frozen" }
   if (!conversation.aiEnabled) return { skipped: true, reason: "ai_disabled" }
 
   const board = conversation.board
-  const state = conversation.currentState
+  // Fallback: auto-assign first board state if conversation has none set
+  const state = conversation.currentState ?? await getCurrentState(conversationId)
+  if (!state) return { skipped: true, reason: "no_current_state" }
+  console.log(`[executor] conv=${conversationId} state=${state.id} (${(state as any).name}) type=${(state as any).type}`)
 
   const isBoardActive =
     board.adminStatus.toString() !== "SUSPENDED" && board.ownerStatus !== "INACTIVE"
