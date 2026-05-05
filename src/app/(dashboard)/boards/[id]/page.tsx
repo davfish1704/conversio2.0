@@ -54,7 +54,6 @@ export default function BoardPipelinePage() {
       ])
       if (boardRes.status === 404 || boardRes.status === 403) {
         setNotFound(true)
-        // Clear stale nav pointer so the CRM dropdown stops linking to a dead board
         if (typeof window !== "undefined") {
           const stored = localStorage.getItem("crm_last_board_id")
           if (stored === id) localStorage.removeItem("crm_last_board_id")
@@ -82,45 +81,47 @@ export default function BoardPipelinePage() {
   if (notFound || !board) return <div className="p-8 text-center text-gray-500">{t("board.notFound")}</div>
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
       <BoardTabs board={board} />
 
-      {/* Pipeline Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center justify-between mb-6">
+      {/* Full-Width Pipeline Content */}
+      <div className="flex-1 px-4 py-3 overflow-hidden flex flex-col min-h-0">
+        <div className="flex items-center justify-between mb-3 shrink-0">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t("crm.pipeline")}</h2>
-            <span className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("crm.pipeline")}</h2>
+            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
               {pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length} {t("common.leads")}
             </span>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setShowImportModal(true)}
-              className="px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30"
+              className="px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
             >
               {t("common.import")}
             </button>
             <button
               disabled
               title="Add lead manually – coming soon"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg opacity-50 cursor-not-allowed"
+              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg opacity-50 cursor-not-allowed"
             >
               + {t("common.addLead")}
             </button>
           </div>
         </div>
 
-        {pipelineStates.length === 0 && unassignedLeads.length === 0 ? (
-          <EmptyStateCard boardId={id} onImportClick={() => setShowImportModal(true)} />
-        ) : (
-          <PipelineBoard
-            states={pipelineStates}
-            boardId={id}
-            unassignedLeads={unassignedLeads}
-            onRefresh={fetchAll}
-          />
-        )}
+        <div className="flex-1 overflow-hidden min-h-0">
+          {pipelineStates.length === 0 && unassignedLeads.length === 0 ? (
+            <EmptyStateCard boardId={id} onImportClick={() => setShowImportModal(true)} />
+          ) : (
+            <PipelineBoard
+              states={pipelineStates}
+              boardId={id}
+              unassignedLeads={unassignedLeads}
+              onRefresh={fetchAll}
+            />
+          )}
+        </div>
       </div>
 
       <LeadImportModal

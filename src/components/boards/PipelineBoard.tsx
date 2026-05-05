@@ -106,7 +106,6 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
     const leadId = active.id as string
     const overId = over.id as string
 
-    // Find target state (only real state columns accepted as drop targets)
     let targetStateId: string | null = null
     for (const state of states) {
       if (state.id === overId) { targetStateId = state.id; break }
@@ -114,7 +113,6 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
     }
     if (!targetStateId) return
 
-    // Find source
     let sourceStateId: string | null = null
     let movedLead: Lead | null = null
 
@@ -128,7 +126,6 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
     }
     if (!movedLead || sourceStateId === targetStateId) return
 
-    // Optimistic update
     if (sourceStateId === null) {
       setUnassigned((prev) => prev.filter((l) => l.id !== leadId))
       setStates((prev) => prev.map((s) =>
@@ -166,35 +163,37 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
   }, [states, unassigned, onRefresh])
 
   return (
-    <div className="h-full">
+    <div className="h-full w-full">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4 overflow-x-auto min-h-[400px] pb-2">
-          {unassigned.length > 0 && (
-            <KanbanColumn
-              id={UNASSIGNED_COL_ID}
-              name="Eingehend"
-              leads={unassigned}
-              states={stateOptions}
-              onStateChange={handleStateChange}
-              onLeadClick={handleLeadClick}
-            />
-          )}
-          {states.map((state) => (
-            <KanbanColumn
-              key={state.id}
-              id={state.id}
-              name={state.name}
-              leads={state.leads}
-              states={stateOptions}
-              onStateChange={handleStateChange}
-              onLeadClick={handleLeadClick}
-            />
-          ))}
+        <div className="h-full overflow-x-auto overflow-y-hidden">
+          <div className="flex gap-4 h-full min-w-max pb-2 pr-4">
+            {unassigned.length > 0 && (
+              <KanbanColumn
+                id={UNASSIGNED_COL_ID}
+                name="Eingehend"
+                leads={unassigned}
+                states={stateOptions}
+                onStateChange={handleStateChange}
+                onLeadClick={handleLeadClick}
+              />
+            )}
+            {states.map((state) => (
+              <KanbanColumn
+                key={state.id}
+                id={state.id}
+                name={state.name}
+                leads={state.leads}
+                states={stateOptions}
+                onStateChange={handleStateChange}
+                onLeadClick={handleLeadClick}
+              />
+            ))}
+          </div>
         </div>
 
         <DragOverlay>

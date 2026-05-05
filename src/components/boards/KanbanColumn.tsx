@@ -28,18 +28,18 @@ export default function KanbanColumn({ id, name, leads, states, onStateChange, o
   return (
     <div
       ref={setNodeRef}
-      className={`w-72 flex flex-col shrink-0 rounded-xl transition ${
+      className={`flex flex-col w-72 min-w-[220px] h-full rounded-xl transition shrink-0 ${
         isOver ? "bg-blue-50/50 ring-2 ring-blue-200" : ""
       }`}
     >
       {/* Column Header */}
-      <div className="flex items-center justify-between mb-3 px-1">
+      <div className="flex items-center justify-between mb-3 px-1 shrink-0">
         <h3 className="text-sm font-semibold text-gray-900">{name}</h3>
         <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{leads.length}</span>
       </div>
 
-      {/* Lead Cards */}
-      <div className="space-y-2 min-h-[100px]">
+      {/* Lead Cards - scrollable within column */}
+      <div className="space-y-2 overflow-y-auto flex-1 pr-1 min-h-0">
         <SortableContext items={leads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
           {leads.map((lead) => (
             <SortableLeadCard

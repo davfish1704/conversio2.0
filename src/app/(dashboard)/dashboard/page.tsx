@@ -194,7 +194,7 @@ function DashboardContent() {
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 {selectedBoard
                   ? `${boardStats?.totalLeads || 0} ${t("common.leads")} · ${boardStats?.activeLeads || 0} ${t("common.active")}`
-                  : `${boards.length} ${t("nav.boards")} · ${activeBoards.length} ${t("common.active")}`
+                  : `${boards.length} Boards · ${activeBoards.length} ${t("common.active")}`
                 }
               </p>
             </div>
@@ -213,7 +213,7 @@ function DashboardContent() {
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              {t("common.newBoard")}
+              {t("dashboard.newBoard")}
             </button>
           )}
         </div>
@@ -244,7 +244,7 @@ function DashboardContent() {
                 )}
                 <div className="grid grid-cols-3 gap-4 text-center pt-4 border-t border-gray-100 dark:border-gray-800">
                   <div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("nav.states")}</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("flowBuilder.states")}</div>
                     <div className="text-lg font-semibold text-gray-900 dark:text-white">
                       {board._count?.states || 0}
                     </div>
@@ -294,13 +294,13 @@ function DashboardContent() {
               </div>
 
               <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("nav.states")}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("flowBuilder.states")}</p>
                 <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.states || 0}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.pipelineStages")}</p>
               </div>
 
               <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("common.members")}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("nav.team")}</p>
                 <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.members || 0}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.teamMembers")}</p>
               </div>
@@ -395,7 +395,7 @@ function DashboardContent() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">{t("common.newBoard")}</h2>
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">{t("dashboard.createBoardTitle")}</h2>
             <form onSubmit={createBoard}>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -411,7 +411,7 @@ function DashboardContent() {
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t("common.description")}
+                  {t("dashboard.boardDescription")}
                 </label>
                 <textarea
                   value={newBoardDesc}
@@ -437,7 +437,7 @@ function DashboardContent() {
                   disabled={formLoading}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {formLoading ? t("common.creating") : t("common.create")}
+                  {formLoading ? t("dashboard.creating") : t("dashboard.create")}
                 </button>
               </div>
             </form>

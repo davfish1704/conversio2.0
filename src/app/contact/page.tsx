@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
-import Link from "next/link"
-import { Zap, Mail, MessageCircle } from "lucide-react"
+import { Mail, MessageCircle, Calendar } from "lucide-react"
+import PublicNav from "@/components/layout/PublicNav"
+import PublicFooter from "@/components/layout/PublicFooter"
 
 export const metadata: Metadata = {
   title: "Contact — Conversio",
@@ -9,85 +10,71 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-white font-sans">
-      {/* Nav */}
-      <nav className="fixed top-0 w-full bg-white border-b border-gray-100 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-              <Zap className="w-5 h-5 text-white fill-white" />
+    <div className="min-h-screen bg-white text-[#0B0B0C] antialiased">
+      <PublicNav activeLink="/contact" />
+
+      <div className="pt-28 md:pt-36 pb-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold text-blue-600 uppercase tracking-[0.15em] mb-3 animate-fade-up">
+              Contact
+            </p>
+            <h1
+              className="font-syne text-5xl md:text-6xl font-bold tracking-tight text-[#0B0B0C] mb-6 animate-fade-up leading-[0.92]"
+              style={{ animationDelay: "60ms" }}
+            >
+              Let&apos;s Talk
+            </h1>
+            <p
+              className="text-lg text-zinc-500 leading-relaxed mb-12 animate-fade-up"
+              style={{ animationDelay: "120ms" }}
+            >
+              Questions about pricing, onboarding, or a custom plan?
+              We respond within one business day.
+            </p>
+
+            <div className="space-y-3">
+              <a
+                href="mailto:info@attrsales.net"
+                className="flex items-center gap-4 p-6 bg-zinc-50 rounded-2xl border border-zinc-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                  <Mail className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-syne font-bold text-[#0B0B0C]">Email</p>
+                  <p className="text-sm text-blue-600 mt-0.5">info@attrsales.net</p>
+                </div>
+              </a>
+
+              <div className="flex items-center gap-4 p-6 bg-zinc-50 rounded-2xl border border-zinc-100 opacity-60 cursor-not-allowed">
+                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <MessageCircle className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="font-syne font-bold text-[#0B0B0C]">WhatsApp</p>
+                  <p className="text-sm text-zinc-400 mt-0.5">Available soon</p>
+                </div>
+              </div>
+
+              <a
+                href="mailto:info@attrsales.net?subject=Demo Request — Conversio"
+                className="flex items-center gap-4 p-6 bg-blue-50 rounded-2xl border border-blue-100 hover:border-blue-300 hover:bg-blue-100/50 transition-all duration-200 group"
+              >
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:bg-blue-200 transition-colors">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-syne font-bold text-[#0B0B0C]">Book a Demo</p>
+                  <p className="text-sm text-blue-600 mt-0.5">20-minute walkthrough + trial setup</p>
+                </div>
+              </a>
             </div>
-            <span className="text-xl font-bold text-gray-900">Conversio</span>
-          </Link>
-          <div className="hidden md:flex items-center gap-8">
-            <Link href="/product" className="text-sm font-medium text-gray-600 hover:text-gray-900">Product</Link>
-            <Link href="/features" className="text-sm font-medium text-gray-600 hover:text-gray-900">Features</Link>
-            <Link href="/pricing" className="text-sm font-medium text-gray-600 hover:text-gray-900">Pricing</Link>
-            <Link href="/contact" className="text-sm font-medium text-blue-600">Contact</Link>
           </div>
-          <Link href="/login" className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors">
-            Get Started Free
-          </Link>
-        </div>
-      </nav>
-
-      <div className="pt-24 pb-20 max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-bold text-gray-900">Get in Touch</h1>
-          <p className="text-lg text-gray-500">
-            Questions about pricing, onboarding, or a custom plan? We respond within one business day.
-          </p>
-        </div>
-
-        <div className="space-y-4">
-          <a
-            href="mailto:info@attrsales.net"
-            className="flex items-center gap-4 p-6 bg-gray-50 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group"
-          >
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-              <Mail className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="font-semibold text-gray-900">Email</p>
-              <p className="text-sm text-blue-600">info@attrsales.net</p>
-            </div>
-          </a>
-
-          <div className="flex items-center gap-4 p-6 bg-gray-50 rounded-xl border border-gray-200">
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="font-semibold text-gray-900">WhatsApp</p>
-              <p className="text-sm text-gray-500">Available soon</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 text-center space-y-3">
-          <p className="font-semibold text-gray-900">Want a live demo?</p>
-          <p className="text-sm text-gray-600">
-            We can walk you through Conversio in 20 minutes and set up a trial tailored to your team.
-          </p>
-          <a
-            href="mailto:info@attrsales.net?subject=Demo Request — Conversio"
-            className="inline-block px-6 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            Request a Demo
-          </a>
         </div>
       </div>
 
-      <footer className="border-t border-gray-200 py-8">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-          <span>© 2026 Conversio. All rights reserved.</span>
-          <div className="flex gap-6">
-            <Link href="/imprint" className="hover:text-gray-900">Imprint</Link>
-            <Link href="/privacy" className="hover:text-gray-900">Privacy Policy</Link>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   )
 }

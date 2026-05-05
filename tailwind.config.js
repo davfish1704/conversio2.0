@@ -44,7 +44,8 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['var(--font-dm-sans)', 'system-ui', '-apple-system', 'sans-serif'],
+        syne: ['var(--font-syne)', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         lg: '0.5rem',
