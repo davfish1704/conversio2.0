@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
 import { decrypt } from "@/lib/crypto/secrets"
+import { webhookLimiter } from "@/lib/rate-limit"
 
 const CHANNEL_TOKEN_RE = /^[\w-]{10,16}$/
 
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     if (!message) return NextResponse.json({ ok: true })
 
     const chatId = String(message.chat.id)
+
+    // Rate limit: 30 messages per minute per chat
+    const rl = await webhookLimiter(chatId)
+    if (!rl.success) return NextResponse.json({ ok: true }) // silently drop; never 429 to Telegram
     const from = message.from
     const customerName =
       [from?.first_name, from?.last_name].filter(Boolean).join(" ") ||

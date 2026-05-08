@@ -19,8 +19,10 @@ model User {
   googleId      String?   @unique @map("google_id")
   image         String?
   password      String?
-  emailVerified DateTime? @map("email_verified")
-  role          UserRole  @default(USER)
+  emailVerified     DateTime? @map("email_verified")
+  verifyToken       String?   @unique @map("verify_token")
+  verifyTokenExpiry DateTime? @map("verify_token_expiry")
+  role              UserRole  @default(USER)
   timezone      String?   @default("Europe/Berlin")
   language      String?   @default("de")
   createdAt     DateTime  @default(now())

@@ -6,6 +6,8 @@ import { assertBoardMemberAccess } from "@/lib/auth-helpers"
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await assertBoardMemberAccess(params.id, session.user.id)
+  if (denied) return denied
   const board = await prisma.board.findUnique({
     where: { id: params.id },
     select: { boardCustomFields: true },

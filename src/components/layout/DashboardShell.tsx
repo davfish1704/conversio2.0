@@ -4,8 +4,11 @@ import { type ReactNode } from "react"
 import SidebarNavigation from "./SidebarNavigation"
 import { SidebarProvider, useSidebar } from "@/lib/SidebarContext"
 import Footer from "@/components/layout/Footer"
+import EmailVerificationBanner from "@/components/ui/EmailVerificationBanner"
 
-function MainContent({ children, user }: { children: ReactNode; user: { name?: string | null; email?: string | null; image?: string | null } }) {
+type User = { name?: string | null; email?: string | null; image?: string | null }
+
+function MainContent({ children, user, emailVerified }: { children: ReactNode; user: User; emailVerified: boolean }) {
   const { collapsed } = useSidebar()
 
   return (
@@ -16,6 +19,7 @@ function MainContent({ children, user }: { children: ReactNode; user: { name?: s
           collapsed ? "md:ml-16" : "md:ml-60"
         }`}
       >
+        {!emailVerified && <EmailVerificationBanner />}
         <div className="flex-1">
           {children}
         </div>
@@ -25,11 +29,19 @@ function MainContent({ children, user }: { children: ReactNode; user: { name?: s
   )
 }
 
-export default function DashboardShell({ children, user }: { children: ReactNode; user: { name?: string | null; email?: string | null; image?: string | null } }) {
+export default function DashboardShell({
+  children,
+  user,
+  emailVerified = true,
+}: {
+  children: ReactNode
+  user: User
+  emailVerified?: boolean
+}) {
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-gray-50 dark:bg-[#0A0A0A] transition-colors">
-        <MainContent user={user}>{children}</MainContent>
+        <MainContent user={user} emailVerified={emailVerified}>{children}</MainContent>
       </div>
     </SidebarProvider>
   )

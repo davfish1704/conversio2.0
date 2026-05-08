@@ -3,6 +3,7 @@ import { createHmac } from "crypto"
 import { prisma } from "@/lib/db"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
+import { webhookLimiter } from "@/lib/rate-limit"
 
 const TOKEN_RE = /^Start\s+([\w-]{10,16})$/
 
@@ -65,6 +66,11 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
 
 async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   const phone = msg.from as string
+
+  // Rate limit: 30 messages per minute per phone number
+  const rl = await webhookLimiter(phone)
+  if (!rl.success) return // silently drop excess messages
+
   const msgText = msg.text as Record<string, string> | undefined
   const msgImage = msg.image as Record<string, string> | undefined
   const content = msgText?.body || msgImage?.caption || "[Media]"
