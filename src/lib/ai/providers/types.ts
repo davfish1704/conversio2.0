@@ -28,6 +28,8 @@ export interface AIResponse {
     totalTokens: number
   }
   model: string
+  provider: string
+  providerCost: number
   rawResponse?: unknown
 }
 

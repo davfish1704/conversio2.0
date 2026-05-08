@@ -30,6 +30,7 @@ export default function BoardTabs({ board }: BoardTabsProps) {
     { key: "brain", label: "BrainLab", href: `/boards/${id}/brain` },
     { key: "flow", label: t("nav.flowBuilder") || "Flow Builder", href: `/boards/${id}/flow` },
     { key: "assets", label: t("assets.title") || "Assets", href: `/boards/${id}/assets` },
+    { key: "usage", label: "Usage", href: `/boards/${id}/usage` },
     { key: "settings", label: t("nav.settings") || "Settings", href: `/boards/${id}/settings` },
   ]
 

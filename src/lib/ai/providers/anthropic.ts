@@ -86,6 +86,12 @@ export class AnthropicProvider implements AIProvider {
         totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
       },
       model: data.model ?? params.model,
+      provider: this.name,
+      providerCost: this.calculateCost(
+        data.usage?.input_tokens ?? 0,
+        data.usage?.output_tokens ?? 0,
+        params.model,
+      ),
       rawResponse: data,
     }
   }

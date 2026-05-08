@@ -195,6 +195,21 @@ export async function runAgentLoop(
 
     result.toolCallCount += response.toolCalls.length
 
+    if (!simulate && response.usage.totalTokens > 0) {
+      prisma.usageLog.create({
+        data: {
+          boardId: ctx.boardId,
+          conversationId: ctx.conversationId,
+          model: response.model,
+          provider: response.provider,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          totalTokens: response.usage.totalTokens,
+          providerCost: response.providerCost,
+        },
+      }).catch(() => {/* non-critical */})
+    }
+
     console.log(`[agent-loop] iter=${iteration} finishReason=${response.finishReason} contentLen=${response.content?.length ?? 0} toolCalls=${response.toolCalls.length}`)
 
     if (response.finishReason === "stop") {

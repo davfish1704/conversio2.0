@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   LogOut,
+  Coins,
 } from "lucide-react"
 import { signOut } from "next-auth/react"
 import { LanguageContext } from "@/lib/LanguageContext"
@@ -85,6 +86,7 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
     { label: t("nav.reports"), href: "/reports", icon: BarChart3 },
     ...(FEATURES.builder ? [{ label: "Builder", href: "/builder", icon: PenTool }] : []),
     { label: t("nav.adminBot"), href: "/admin-bot", icon: Bot },
+    { label: "Token Usage", href: "/admin-usage", icon: Coins },
     { label: t("nav.team"), href: "/team", icon: Users },
     { label: t("nav.settings"), href: "/settings", icon: Settings },
   ]

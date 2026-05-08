@@ -156,6 +156,7 @@ model Board {
   channels         BoardChannel[]
   channelInvites   ChannelInvite[]
   aiProviderConfig AIProviderConfig?
+  usageLogs        UsageLog[]
 
   @@map("boards")
 }
@@ -298,6 +299,7 @@ model Conversation {
   currentState  State?         @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
   messages      Message[]
   executionLogs ExecutionLog[]
+  usageLogs     UsageLog[]
 
   @@index([leadId, lastMessageAt])
   @@index([boardId, status, lastMessageAt])
@@ -666,4 +668,29 @@ enum JobStatus {
   COMPLETED
   FAILED
   CANCELLED
+}
+
+// ============================================
+// TOKEN USAGE TRACKING
+// ============================================
+
+model UsageLog {
+  id             String   @id @default(cuid())
+  boardId        String
+  conversationId String?
+  model          String
+  provider       String   @default("unknown")
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  totalTokens    Int      @default(0)
+  providerCost   Float    @default(0)
+  creditCharged  Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  board        Board         @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([boardId, createdAt])
+  @@index([model, createdAt])
+  @@map("usage_logs")
 }

@@ -59,6 +59,12 @@ export class OpenRouterProvider implements AIProvider {
         totalTokens: response.usage?.total_tokens ?? 0,
       },
       model: response.model,
+      provider: this.name,
+      providerCost: this.calculateCost(
+        response.usage?.prompt_tokens ?? 0,
+        response.usage?.completion_tokens ?? 0,
+        params.model,
+      ),
     }
   }
 
