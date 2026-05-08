@@ -71,12 +71,20 @@ export async function PUT(
       return jsonError("You don't have permission for this action.", "FORBIDDEN", 403)
     }
 
-    const data = await req.json()
+    const body = await req.json()
+    const {
+      systemPrompt, stylePrompt, infoPrompt, rulePrompt, channelSwitchTemplate,
+      defaultModel, temperature, maxTokens, language, tone,
+    } = body
+    const safeData = {
+      systemPrompt, stylePrompt, infoPrompt, rulePrompt, channelSwitchTemplate,
+      defaultModel, temperature, maxTokens, language, tone,
+    }
 
     const brain = await prisma.boardBrain.upsert({
       where: { boardId: params.id },
-      update: data,
-      create: { ...data, boardId: params.id },
+      update: safeData,
+      create: { ...safeData, boardId: params.id },
     })
 
     return NextResponse.json(brain)

@@ -73,3 +73,35 @@ export async function POST(
     return NextResponse.json({ error: "Failed to create rule" }, { status: 500 })
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const { id } = params
+
+  try {
+    const board = await prisma.board.findFirst({
+      where: { id, members: { some: { userId: session.user.id } } },
+    })
+    if (!board) {
+      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
+    }
+
+    const { id: ruleId } = await req.json()
+    if (!ruleId) {
+      return NextResponse.json({ error: "Rule ID required" }, { status: 400 })
+    }
+
+    await prisma.brainRule.delete({ where: { id: ruleId } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error("Brain rules DELETE error:", error)
+    return NextResponse.json({ error: "Failed to delete rule" }, { status: 500 })
+  }
+}

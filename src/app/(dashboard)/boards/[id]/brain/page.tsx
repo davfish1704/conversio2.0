@@ -19,16 +19,16 @@ interface BrainData {
 
 interface BrainDocument {
   id: string
-  title: string
+  name: string
   content: string
   createdAt: string
 }
 
 interface BrainRule {
   id: string
-  title: string
-  content: string
-  priority: number
+  name: string
+  rule: string
+  severity: string
   createdAt: string
 }
 
@@ -68,7 +68,7 @@ export default function BrainLabPage() {
   const [rules, setRules] = useState<BrainRule[]>([])
   const [newRuleTitle, setNewRuleTitle] = useState("")
   const [newRuleContent, setNewRuleContent] = useState("")
-  const [newRulePriority, setNewRulePriority] = useState(1)
+  const [newRuleSeverity, setNewRuleSeverity] = useState("warning")
 
   // FAQs State
   const [faqs, setFaqs] = useState<BrainFAQ[]>([])
@@ -122,7 +122,7 @@ export default function BrainLabPage() {
     setSaving(true)
     try {
       const res = await fetch(`/api/boards/${id}/brain`, {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(brainData),
       })
@@ -144,7 +144,7 @@ export default function BrainLabPage() {
       const res = await fetch(`/api/boards/${id}/brain/documents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newDocTitle, content: newDocContent }),
+        body: JSON.stringify({ name: newDocTitle, content: newDocContent }),
       })
       if (!res.ok) throw new Error("Add failed")
       setNewDocTitle("")
@@ -179,12 +179,12 @@ export default function BrainLabPage() {
       const res = await fetch(`/api/boards/${id}/brain/rules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newRuleTitle, content: newRuleContent, priority: newRulePriority }),
+        body: JSON.stringify({ name: newRuleTitle, rule: newRuleContent, severity: newRuleSeverity }),
       })
       if (!res.ok) throw new Error("Add failed")
       setNewRuleTitle("")
       setNewRuleContent("")
-      setNewRulePriority(1)
+      setNewRuleSeverity("warning")
       fetchAll()
     } catch {
       toast({ title: "Fehler beim Hinzufügen", variant: "destructive" })
@@ -369,7 +369,11 @@ export default function BrainLabPage() {
               </button>
               <button
                 onClick={() => {
-                  fetch(`/api/boards/${id}/brain/simulate`, { method: "POST" })
+                  fetch(`/api/boards/${id}/brain/simulate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: "Hallo" }),
+                  })
                     .then(r => r.json())
                     .then(data => toast({ title: "Simulation erfolgreich", description: data?.message || "KI-Antwort erhalten" }))
                     .catch(() => toast({ title: "Simulation fehlgeschlagen", variant: "destructive" }))
@@ -431,7 +435,7 @@ export default function BrainLabPage() {
                   <div key={doc.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h4 className="font-semibold text-gray-900 dark:text-white">{doc.title}</h4>
+                        <h4 className="font-semibold text-gray-900 dark:text-white">{doc.name}</h4>
                         <p className="text-xs text-gray-400 mt-1">{new Date(doc.createdAt).toLocaleDateString()}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-3 whitespace-pre-wrap">{doc.content}</p>
                       </div>
@@ -479,15 +483,15 @@ export default function BrainLabPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Priority (1-10)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={newRulePriority}
-                    onChange={(e) => setNewRulePriority(parseInt(e.target.value) || 1)}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Schwere</label>
+                  <select
+                    value={newRuleSeverity}
+                    onChange={(e) => setNewRuleSeverity(e.target.value)}
+                    className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="warning">Warning</option>
+                    <option value="error">Error</option>
+                  </select>
                 </div>
                 <button
                   onClick={addRule}
@@ -505,24 +509,20 @@ export default function BrainLabPage() {
                   <p className="text-gray-500 dark:text-gray-400">No rules yet. Add your first guardrail rule above.</p>
                 </div>
               ) : (
-                rules
-                  .sort((a, b) => b.priority - a.priority)
-                  .map((rule) => (
+                rules.map((rule) => (
                     <div key={rule.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3">
-                            <h4 className="font-semibold text-gray-900 dark:text-white">{rule.title}</h4>
+                            <h4 className="font-semibold text-gray-900 dark:text-white">{rule.name}</h4>
                             <span className={`px-2 py-0.5 text-xs rounded-full ${
-                              rule.priority >= 8 ? "bg-red-100 text-red-700" :
-                              rule.priority >= 5 ? "bg-yellow-100 text-yellow-700" :
-                              "bg-green-100 text-green-700"
+                              rule.severity === "error" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
                             }`}>
-                              P{rule.priority}
+                              {rule.severity || "warning"}
                             </span>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">{new Date(rule.createdAt).toLocaleDateString()}</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">{rule.content}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">{rule.rule}</p>
                         </div>
                         <button
                           onClick={() => deleteRule(rule.id)}

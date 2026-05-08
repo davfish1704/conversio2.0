@@ -73,3 +73,35 @@ export async function POST(
     return NextResponse.json({ error: "Failed to create FAQ" }, { status: 500 })
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const { id } = params
+
+  try {
+    const board = await prisma.board.findFirst({
+      where: { id, members: { some: { userId: session.user.id } } },
+    })
+    if (!board) {
+      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
+    }
+
+    const { id: faqId } = await req.json()
+    if (!faqId) {
+      return NextResponse.json({ error: "FAQ ID required" }, { status: 400 })
+    }
+
+    await prisma.brainFAQ.delete({ where: { id: faqId } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error("Brain FAQs DELETE error:", error)
+    return NextResponse.json({ error: "Failed to delete FAQ" }, { status: 500 })
+  }
+}

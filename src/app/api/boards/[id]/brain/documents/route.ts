@@ -73,3 +73,35 @@ export async function POST(
     return NextResponse.json({ error: "Failed to create document" }, { status: 500 })
   }
 }
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const { id } = params
+
+  try {
+    const board = await prisma.board.findFirst({
+      where: { id, members: { some: { userId: session.user.id } } },
+    })
+    if (!board) {
+      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
+    }
+
+    const { id: docId } = await req.json()
+    if (!docId) {
+      return NextResponse.json({ error: "Document ID required" }, { status: 400 })
+    }
+
+    await prisma.brainDocument.delete({ where: { id: docId } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error("Brain documents DELETE error:", error)
+    return NextResponse.json({ error: "Failed to delete document" }, { status: 500 })
+  }
+}
