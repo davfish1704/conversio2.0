@@ -39,18 +39,46 @@ export async function processNextBatch(limit = 10): Promise<number> {
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const willRetry = job.attempts < job.maxAttempts
-        // Exponential backoff: 2^attempt seconds
-        const backoffMs = 1000 * Math.pow(2, job.attempts)
+        // Exponential backoff: 2^attempts × 60 seconds
+        const backoffMs = 60 * 1000 * Math.pow(2, job.attempts)
 
         await prisma.job.update({
           where: { id },
           data: {
-            status: willRetry ? "PENDING" : "FAILED",
+            status: willRetry ? "PENDING" : "DEAD",
             lastError: errorMsg.slice(0, 500),
             ...(willRetry ? { scheduledFor: new Date(Date.now() + backoffMs) } : {}),
           },
         })
-        console.error(`[JobRunner] job=${id} type=${job.type} attempt=${job.attempts} error:`, errorMsg)
+
+        if (!willRetry) {
+          // Dead Letter Queue: persist exhausted job for inspection
+          prisma.failedJob.create({
+            data: {
+              jobId: id,
+              type: job.type,
+              payload: job.payload as Parameters<typeof prisma.failedJob.create>[0]["data"]["payload"],
+              lastError: errorMsg.slice(0, 500),
+              attempts: job.attempts,
+              boardId: job.boardId ?? null,
+              leadId: job.leadId ?? null,
+            },
+          }).catch(() => {})
+
+          // Admin notification (fire-and-forget)
+          import("@/lib/notifications/admin-notify").then(({ notifyAdmin }) =>
+            notifyAdmin({
+              type: "FAILED_JOB",
+              title: `Job fehlgeschlagen: ${job.type}`,
+              body: `Job ${id} nach ${job.attempts} Versuchen endgültig gescheitert: ${errorMsg.slice(0, 200)}`,
+              jobId: id,
+              boardId: job.boardId ?? undefined,
+              leadId: job.leadId ?? undefined,
+            })
+          ).catch(() => {})
+        }
+
+        console.error(`[JobRunner] job=${id} type=${job.type} attempt=${job.attempts} willRetry=${willRetry} error:`, errorMsg)
       }
     })
   )

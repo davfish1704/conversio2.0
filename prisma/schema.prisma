@@ -668,6 +668,21 @@ enum JobStatus {
   COMPLETED
   FAILED
   CANCELLED
+  DEAD
+}
+
+model FailedJob {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  type      String
+  payload   Json
+  lastError String?
+  attempts  Int
+  boardId   String?
+  leadId    String?
+  createdAt DateTime @default(now())
+
+  @@map("failed_jobs")
 }
 
 // ============================================
@@ -693,4 +708,29 @@ model UsageLog {
   @@index([boardId, createdAt])
   @@index([model, createdAt])
   @@map("usage_logs")
+}
+
+// ============================================
+// ADMIN NOTIFICATIONS (system-level alerts)
+// ============================================
+
+model AdminNotification {
+  id        String                @id @default(cuid())
+  type      AdminNotificationType
+  title     String
+  body      String
+  read      Boolean               @default(false)
+  boardId   String?
+  leadId    String?
+  jobId     String?
+  createdAt DateTime              @default(now())
+
+  @@index([read, createdAt])
+  @@map("admin_notifications")
+}
+
+enum AdminNotificationType {
+  FAILED_JOB
+  LEAD_STUCK
+  SYSTEM_ERROR
 }

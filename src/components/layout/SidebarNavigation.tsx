@@ -19,6 +19,7 @@ import {
   Moon,
   LogOut,
   Coins,
+  Bell,
 } from "lucide-react"
 import { signOut } from "next-auth/react"
 import { LanguageContext } from "@/lib/LanguageContext"
@@ -50,6 +51,7 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
   const [boards, setBoards] = useState<Board[]>([])
   const [lastBoardId, setLastBoardId] = useState<string | null>(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [unreadNotifications, setUnreadNotifications] = useState(0)
   const userMenuRef = useRef<HTMLDivElement>(null)
   const crmRef = useRef<HTMLDivElement>(null)
 
@@ -72,6 +74,22 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
   }, [pathname])
 
   useEffect(() => {
+    let cancelled = false
+    async function poll() {
+      try {
+        const res = await fetch("/api/admin/notifications?unread=true")
+        if (res.ok && !cancelled) {
+          const data = await res.json()
+          setUnreadNotifications(data.notifications?.length ?? 0)
+        }
+      } catch {}
+    }
+    poll()
+    const interval = setInterval(poll, 60_000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [])
+
+  useEffect(() => {
     if (crmOpen) {
       fetch("/api/boards")
         .then((r) => r.json())
@@ -87,6 +105,7 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
     ...(FEATURES.builder ? [{ label: "Builder", href: "/builder", icon: PenTool }] : []),
     { label: t("nav.adminBot"), href: "/admin-bot", icon: Bot },
     { label: "Token Usage", href: "/admin-usage", icon: Coins },
+    { label: "Notifications", href: "/admin-notifications", icon: Bell, badge: unreadNotifications },
     { label: t("nav.team"), href: "/team", icon: Users },
     { label: t("nav.settings"), href: "/settings", icon: Settings },
   ]
@@ -227,8 +246,15 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
                     : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}
               >
-                <item.icon className="w-4 h-4 flex-shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                <span className="relative flex-shrink-0">
+                  <item.icon className="w-4 h-4" />
+                  {(item as { badge?: number }).badge ? (
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold leading-none">
+                      {(item as { badge?: number }).badge! > 9 ? "9+" : (item as { badge?: number }).badge}
+                    </span>
+                  ) : null}
+                </span>
+                {!collapsed && <span className="flex-1">{item.label}</span>}
               </Link>
             )
           })}
