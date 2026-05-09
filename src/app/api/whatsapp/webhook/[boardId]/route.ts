@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
 import { webhookLimiter } from "@/lib/rate-limit"
+import { isSpamMessage } from "@/lib/webhook-protection"
 
 const TOKEN_RE = /^Start\s+([\w-]{10,16})$/
 
@@ -66,6 +67,18 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
 
 async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   const phone = msg.from as string
+  const msgId = msg.id as string
+
+  // Idempotency: skip messages already processed (Meta retries on non-200)
+  const already = await prisma.processedWebhook.findUnique({
+    where: { externalId_channel_boardId: { externalId: msgId, channel: "whatsapp", boardId } },
+  })
+  if (already) return
+  try {
+    await prisma.processedWebhook.create({ data: { externalId: msgId, channel: "whatsapp", boardId } })
+  } catch {
+    return // concurrent duplicate
+  }
 
   // Rate limit: 30 messages per minute per phone number
   const rl = await webhookLimiter(phone)
@@ -74,6 +87,9 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   const msgText = msg.text as Record<string, string> | undefined
   const msgImage = msg.image as Record<string, string> | undefined
   const content = msgText?.body || msgImage?.caption || "[Media]"
+
+  // Spam check
+  if (isSpamMessage(content)) return
 
   // Channel-Switch: "Start <token>" erkennen → Invite einlösen
   const tokenMatch = typeof content === "string" ? content.match(TOKEN_RE) : null

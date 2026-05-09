@@ -736,3 +736,19 @@ enum AdminNotificationType {
   LEAD_STUCK
   SYSTEM_ERROR
 }
+
+// ============================================
+// WEBHOOK IDEMPOTENCY
+// ============================================
+
+model ProcessedWebhook {
+  id          String   @id @default(cuid())
+  externalId  String
+  channel     String
+  boardId     String
+  processedAt DateTime @default(now())
+
+  @@unique([externalId, channel, boardId])
+  @@index([processedAt])
+  @@map("processed_webhooks")
+}

@@ -4,6 +4,7 @@ import { enqueueJob } from "@/lib/jobs/enqueue"
 import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
 import { decrypt } from "@/lib/crypto/secrets"
 import { webhookLimiter } from "@/lib/rate-limit"
+import { isSpamMessage } from "@/lib/webhook-protection"
 
 const CHANNEL_TOKEN_RE = /^[\w-]{10,16}$/
 
@@ -39,6 +40,18 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
     if (!message) return NextResponse.json({ ok: true })
 
     const chatId = String(message.chat.id)
+    const extId = `${chatId}:${message.message_id}`
+
+    // Idempotency: skip messages already processed (Telegram retries on timeout)
+    const already = await prisma.processedWebhook.findUnique({
+      where: { externalId_channel_boardId: { externalId: extId, channel: "telegram", boardId } },
+    })
+    if (already) return NextResponse.json({ ok: true })
+    try {
+      await prisma.processedWebhook.create({ data: { externalId: extId, channel: "telegram", boardId } })
+    } catch {
+      return NextResponse.json({ ok: true }) // concurrent duplicate
+    }
 
     // Rate limit: 30 messages per minute per chat
     const rl = await webhookLimiter(chatId)
@@ -50,6 +63,9 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
       chatId
     const content = extractContent(message)
     const timestamp = new Date(message.date * 1000)
+
+    // Spam check
+    if (isSpamMessage(typeof content === "string" ? content : "")) return NextResponse.json({ ok: true })
 
     // Handle deep link: /start <token|lead_id>
     if (typeof content === "string" && content.startsWith("/start ")) {

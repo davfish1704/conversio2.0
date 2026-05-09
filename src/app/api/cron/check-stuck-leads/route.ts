@@ -19,6 +19,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  // Cleanup processed webhooks older than 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  await prisma.processedWebhook.deleteMany({ where: { processedAt: { lt: sevenDaysAgo } } })
+
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS)
   const dedupeCutoff = new Date(Date.now() - DEDUPE_WINDOW_MS)
 
