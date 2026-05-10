@@ -13,7 +13,7 @@ export class DeepSeekProvider implements AIProvider {
   constructor(apiKey: string) {
     this.client = new OpenAI({
       apiKey,
-      baseURL: "https://api.deepseek.com",
+      baseURL: "https://api.deepseek.com/v1",
     })
   }
 
