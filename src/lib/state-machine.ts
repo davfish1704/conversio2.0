@@ -84,32 +84,36 @@ export async function checkStateTransition(
 }
 
 /**
- * Transition conversation (and its lead) to a new state
+ * Transition conversation (and its lead) to a new state.
+ * reason="manual": User-Aktion, darf auch rückwärts.
+ * reason="ai_advance": Nur vorwärts — stage-guard blockiert Rückwärtsbewegungen.
  */
-export async function transitionState(conversationId: string, newStateId: string) {
+export async function transitionState(
+  conversationId: string,
+  newStateId: string,
+  reason: "manual" | "ai_advance" = "ai_advance",
+  userId?: string
+) {
   const conversation = await (prisma as any).conversation.update({
     where: { id: conversationId },
     data: { currentStateId: newStateId },
     include: { currentState: true },
   })
 
-  // Update lead.currentStateId (Pipeline-State)
+  // Lead-Stage über stage-guard aktualisieren (erzwingt Rückwärts-Schutz für AI)
   if (conversation.leadId) {
-    await (prisma as any).lead.update({
-      where: { id: conversation.leadId },
-      data: { currentStateId: newStateId },
-    })
+    const { moveLeadToStage } = await import("@/lib/leads/stage-guard")
+    await moveLeadToStage(conversation.leadId, newStateId, reason, userId)
   }
 
-  console.log(`State transition: ${conversationId} -> ${conversation.currentState?.name || newStateId}`)
+  console.log(`[state-machine] ${conversationId} → ${conversation.currentState?.name || newStateId} (${reason})`)
 
-  // Log the transition
   await prisma.executionLog.create({
     data: {
       boardId: conversation.boardId || "unknown",
       conversationId,
       stateId: newStateId,
-      action: "STATE_TRANSITION",
+      action: `STATE_TRANSITION:${reason.toUpperCase()}`,
       status: "SUCCESS",
     },
   })

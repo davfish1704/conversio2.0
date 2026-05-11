@@ -1,15 +1,31 @@
+import Link from "next/link"
+import { Home, ArrowLeft } from "lucide-react"
+
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
-      <div className="bg-white dark:bg-gray-900 p-8 rounded-lg shadow-lg max-w-md text-center">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">404</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-6">Page not found</p>
-        <a 
-          href="/dashboard" 
-          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition inline-block"
-        >
-          Back to Dashboard
-        </a>
+    <div className="min-h-[60vh] flex items-center justify-center p-8">
+      <div className="bg-card border border-border rounded-xl p-10 max-w-md w-full text-center shadow-sm animate-fade-up">
+        <p className="text-5xl font-bold text-muted-foreground/30 mb-4 tabular-nums">404</p>
+        <h2 className="text-lg font-semibold text-foreground mb-2">Seite nicht gefunden</h2>
+        <p className="text-sm text-muted-foreground mb-7">
+          Diese Seite existiert nicht oder du hast keinen Zugriff darauf.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Home className="w-3.5 h-3.5" />
+            Dashboard
+          </Link>
+          <button
+            onClick={() => history.back()}
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Zurück
+          </button>
+        </div>
       </div>
     </div>
   )

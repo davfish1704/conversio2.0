@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
-import { assertBoardMemberAccess } from "@/lib/auth-helpers"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 import { PROVIDER_MODELS } from "@/lib/ai/registry"
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const denied = await assertBoardMemberAccess(params.id, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const config = await prisma.aIProviderConfig.findUnique({ where: { boardId: params.id } })
 
@@ -27,8 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const denied = await assertBoardMemberAccess(params.id, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const body = await req.json()
   const { defaultProvider, defaultModel, fallbackProvider, fallbackModel, modelOverrides } = body

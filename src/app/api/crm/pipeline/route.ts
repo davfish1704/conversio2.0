@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 import { z } from "zod"
+import { assertBoardAccess, assertConversationAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 function jsonError(message: string, code: string, status: number) {
   return NextResponse.json({ error: true, message, code }, { status })
@@ -34,13 +35,8 @@ export async function PATCH(req: NextRequest) {
     const { conversationId, targetStateId } = parsed.data
 
     // Lookup via Conversation um Board-Membership zu prüfen
-    const conversation = await (prisma as any).conversation.findFirst({
-      where: {
-        id: conversationId,
-        board: {
-          members: { some: { userId: session.user.id } },
-        },
-      },
+    const conversation = await (prisma as any).conversation.findUnique({
+      where: { id: conversationId },
       include: {
         lead: {
           include: { currentState: true },
@@ -52,18 +48,18 @@ export async function PATCH(req: NextRequest) {
     let lead = conversation?.lead ?? null
     let boardId = conversation?.boardId ?? null
 
-    if (!lead) {
+    if (lead && boardId) {
+      try { await assertConversationAccess({ userId: session.user.id, conversationId }) } catch (e) { return toNextResponse(e) }
+    } else {
       // Versuche direkt als Lead-ID zu finden
-      const directLead = await (prisma as any).lead.findFirst({
-        where: {
-          id: conversationId,
-          board: { members: { some: { userId: session.user.id } } },
-        },
+      const directLead = await (prisma as any).lead.findUnique({
+        where: { id: conversationId },
         include: { currentState: true },
       })
       if (directLead) {
         lead = directLead
         boardId = directLead.boardId
+        try { await assertBoardAccess({ userId: session.user.id, boardId }) } catch (e) { return toNextResponse(e) }
       }
     }
 
@@ -83,33 +79,22 @@ export async function PATCH(req: NextRequest) {
       return jsonError("Target stage not found.", "STATE_NOT_FOUND", 404)
     }
 
-    // Build state history entry
-    const historyEntry = {
-      fromStateId: lead.currentStateId,
-      fromStateName: lead.currentState?.name || null,
-      toStateId: targetStateId,
-      timestamp: new Date().toISOString(),
-      source: "manual_drag",
-    }
+    // stage-guard ist der einzige autorisierte Weg für Lead-Stage-Änderungen
+    const { moveLeadToStage } = await import("@/lib/leads/stage-guard")
+    await moveLeadToStage(lead.id, targetStateId, "manual", session.user.id)
 
-    const existingHistory = Array.isArray(lead.stateHistory) ? lead.stateHistory : []
-
-    const updatedLead = await (prisma as any).lead.update({
-      where: { id: lead.id },
-      data: {
-        currentStateId: targetStateId,
-        stateHistory: [...existingHistory, historyEntry],
-      },
-      include: { currentState: true },
-    })
-
-    // Synce Conversation.currentStateId wenn vorhanden
+    // Conversation.currentStateId syncen wenn vorhanden
     if (conversation) {
       await (prisma as any).conversation.update({
         where: { id: conversation.id },
         data: { currentStateId: targetStateId },
       })
     }
+
+    const updatedLead = await (prisma as any).lead.findUnique({
+      where: { id: lead.id },
+      include: { currentState: true },
+    })
 
     return NextResponse.json({ success: true, lead: updatedLead })
   } catch (error) {
@@ -132,11 +117,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const board = await (prisma as any).board.findFirst({
-      where: {
-        id: boardId,
-        members: { some: { userId: session.user.id } },
-      },
+    try { await assertBoardAccess({ userId: session.user.id, boardId }) } catch (e) { return toNextResponse(e) }
+    const board = await (prisma as any).board.findUnique({
+      where: { id: boardId },
       include: {
         states: {
           orderBy: { orderIndex: "asc" },

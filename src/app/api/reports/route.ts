@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { auth } from '@/auth'
-import { assertReportOwnership, assertBoardMemberAccess } from '@/lib/auth-helpers'
+import { assertBoardAccess, assertReportAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function GET() {
   const session = await auth()
@@ -49,8 +49,7 @@ export async function PUT(req: NextRequest) {
   const body = await req.json()
   const { id, status } = body
 
-  const denied = await assertReportOwnership(id, session.user.id)
-  if (denied) return denied
+  try { await assertReportAccess({ userId: session.user.id, reportId: id }) } catch (e) { return toNextResponse(e) }
 
   const report = await prisma.adminReport.update({
     where: { id },
@@ -72,8 +71,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { boardId, stateId, type, message, details } = body
 
-  const denied = await assertBoardMemberAccess(boardId, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId }) } catch (e) { return toNextResponse(e) }
 
   const report = await prisma.adminReport.create({
     data: {

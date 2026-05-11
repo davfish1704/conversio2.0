@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 /**
  * POST /api/boards/[id]/states/bulk
@@ -28,6 +29,7 @@ export async function POST(
     }
 
     // Verify membership
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
     const membership = await prisma.boardMember.findFirst({
       where: {
         boardId: params.id,

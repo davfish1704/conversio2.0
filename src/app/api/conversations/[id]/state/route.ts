@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
+import { assertConversationAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 /**
  * PATCH /api/conversations/[id]/state
@@ -26,11 +27,9 @@ export async function PATCH(
     }
 
     // Get conversation with lead — prüft gleichzeitig Board-Mitgliedschaft
-    const conversation = await (prisma as any).conversation.findFirst({
-      where: {
-        id: params.id,
-        board: { members: { some: { userId: session.user.id } } },
-      },
+    try { await assertConversationAccess({ userId: session.user.id, conversationId: params.id }) } catch (e) { return toNextResponse(e) }
+    const conversation = await (prisma as any).conversation.findUnique({
+      where: { id: params.id },
       include: {
         lead: {
           include: { currentState: true },
@@ -44,32 +43,17 @@ export async function PATCH(
 
     const lead = conversation.lead
 
-    // Build state history entry
-    const historyEntry = {
-      fromStateId: lead.currentStateId,
-      fromStateName: lead.currentState?.name || null,
-      toStateId: stateId,
-      timestamp: new Date().toISOString(),
-      source,
-    }
+    // stage-guard ist der einzige autorisierte Weg für Lead-Stage-Änderungen
+    const { moveLeadToStage } = await import("@/lib/leads/stage-guard")
+    await moveLeadToStage(lead.id, stateId, "manual", session.user.id)
 
-    const existingHistory = Array.isArray(lead.stateHistory) ? lead.stateHistory : []
-
-    // Update lead.currentStateId + lead.stateHistory (Pipeline-State)
-    const updatedLead = await (prisma as any).lead.update({
-      where: { id: lead.id },
-      data: {
-        currentStateId: stateId,
-        stateHistory: [...existingHistory, historyEntry],
-      },
-    })
-
-    // Optional: auch conversation.currentStateId syncen für AI-Engine
+    // Conversation.currentStateId syncen für AI-Engine
     await (prisma as any).conversation.update({
       where: { id: params.id },
       data: { currentStateId: stateId },
     })
 
+    const updatedLead = await (prisma as any).lead.findUnique({ where: { id: lead.id } })
     return NextResponse.json({ lead: updatedLead })
   } catch (error) {
     console.error("State update error:", error)

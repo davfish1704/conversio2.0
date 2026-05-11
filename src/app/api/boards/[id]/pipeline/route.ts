@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 /**
  * GET /api/boards/[id]/pipeline
@@ -18,11 +19,9 @@ export async function GET(
 
   try {
     // Verify user has access to this board
-    const board = await (prisma as any).board.findFirst({
-      where: {
-        id: params.id,
-        members: { some: { userId: session.user.id } },
-      },
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
+    const board = await (prisma as any).board.findUnique({
+      where: { id: params.id },
       include: {
         states: {
           orderBy: { orderIndex: "asc" },

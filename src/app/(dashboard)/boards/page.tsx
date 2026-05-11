@@ -12,7 +12,7 @@ export default function BoardsRedirectPage() {
   }, [router])
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="text-gray-500">{t("common.redirecting")}</div>
+      <div className="text-muted-foreground text-sm">{t("common.redirecting")}</div>
     </div>
   )
 }

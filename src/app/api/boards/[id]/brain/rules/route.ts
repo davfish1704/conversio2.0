@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function GET(
   req: NextRequest,
@@ -14,12 +15,7 @@ export async function GET(
   const { id } = params
 
   try {
-    const board = await prisma.board.findFirst({
-      where: { id, members: { some: { userId: session.user.id } } },
-    })
-    if (!board) {
-      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
-    }
+    try { await assertBoardAccess({ userId: session.user.id, boardId: id }) } catch (e) { return toNextResponse(e) }
 
     const rules = await prisma.brainRule.findMany({
       where: { boardId: id },
@@ -45,12 +41,7 @@ export async function POST(
   const { id } = params
 
   try {
-    const board = await prisma.board.findFirst({
-      where: { id, members: { some: { userId: session.user.id } } },
-    })
-    if (!board) {
-      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
-    }
+    try { await assertBoardAccess({ userId: session.user.id, boardId: id }) } catch (e) { return toNextResponse(e) }
 
     const { name, rule, severity = "warning" } = await req.json()
 
@@ -86,12 +77,7 @@ export async function DELETE(
   const { id } = params
 
   try {
-    const board = await prisma.board.findFirst({
-      where: { id, members: { some: { userId: session.user.id } } },
-    })
-    if (!board) {
-      return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 })
-    }
+    try { await assertBoardAccess({ userId: session.user.id, boardId: id }) } catch (e) { return toNextResponse(e) }
 
     const { id: ruleId } = await req.json()
     if (!ruleId) {

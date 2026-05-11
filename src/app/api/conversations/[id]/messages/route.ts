@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-import { assertConversationOwnership } from "@/lib/auth-helpers"
+import { assertConversationAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 import { sendMessage } from "@/lib/messaging/dispatcher"
 
 // GET /api/conversations/[id]/messages
@@ -17,8 +17,7 @@ export async function GET(
 
     const conversationId = params.id
 
-    const denied = await assertConversationOwnership(conversationId, session.user.id)
-    if (denied) return denied
+    try { await assertConversationAccess({ userId: session.user.id, conversationId }) } catch (e) { return toNextResponse(e) }
 
     const messages = await prisma.message.findMany({
       where: { conversationId },
@@ -48,8 +47,7 @@ export async function POST(
 
     const conversationId = params.id
 
-    const denied = await assertConversationOwnership(conversationId, session.user.id)
-    if (denied) return denied
+    try { await assertConversationAccess({ userId: session.user.id, conversationId }) } catch (e) { return toNextResponse(e) }
 
     const body = await req.json()
     const { content, direction = "OUTBOUND", messageType = "TEXT", status = "SENT", aiGenerated = false } = body

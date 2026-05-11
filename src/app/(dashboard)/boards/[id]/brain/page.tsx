@@ -5,10 +5,10 @@ import { useParams } from "next/navigation"
 import BoardNav from "@/components/boards/BoardNav"
 import { LanguageContext } from "@/lib/LanguageContext"
 import { useToast } from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 
-// ============================================
-// TYPES
-// ============================================
 interface BrainData {
   systemPrompt: string | null
   stylePrompt: string | null
@@ -39,9 +39,9 @@ interface BrainFAQ {
   createdAt: string
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
+const taClass = "w-full px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring font-mono text-sm resize-none"
+const inputClass = "w-full px-3 py-2 text-sm border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+
 export default function BrainLabPage() {
   const { id } = useParams() as { id: string }
   const { t } = useContext(LanguageContext)
@@ -50,7 +50,6 @@ export default function BrainLabPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Prompts State
   const [brainData, setBrainData] = useState<BrainData>({
     systemPrompt: "",
     stylePrompt: "",
@@ -59,25 +58,19 @@ export default function BrainLabPage() {
     channelSwitchTemplate: "",
   })
 
-  // Documents State
   const [documents, setDocuments] = useState<BrainDocument[]>([])
   const [newDocTitle, setNewDocTitle] = useState("")
   const [newDocContent, setNewDocContent] = useState("")
 
-  // Rules State
   const [rules, setRules] = useState<BrainRule[]>([])
   const [newRuleTitle, setNewRuleTitle] = useState("")
   const [newRuleContent, setNewRuleContent] = useState("")
   const [newRuleSeverity, setNewRuleSeverity] = useState("warning")
 
-  // FAQs State
   const [faqs, setFaqs] = useState<BrainFAQ[]>([])
   const [newFAQQuestion, setNewFAQQuestion] = useState("")
   const [newFAQAnswer, setNewFAQAnswer] = useState("")
 
-  // ============================================
-  // FETCH ALL DATA
-  // ============================================
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
@@ -87,23 +80,10 @@ export default function BrainLabPage() {
         fetch(`/api/boards/${id}/brain/rules`),
         fetch(`/api/boards/${id}/brain/faqs`),
       ])
-
-      if (brainRes.ok) {
-        const data = await brainRes.json()
-        setBrainData(data.brain || data)
-      }
-      if (docsRes.ok) {
-        const data = await docsRes.json()
-        setDocuments(data.documents || [])
-      }
-      if (rulesRes.ok) {
-        const data = await rulesRes.json()
-        setRules(data.rules || [])
-      }
-      if (faqsRes.ok) {
-        const data = await faqsRes.json()
-        setFaqs(data.faqs || [])
-      }
+      if (brainRes.ok) { const d = await brainRes.json(); setBrainData(d.brain || d) }
+      if (docsRes.ok) { const d = await docsRes.json(); setDocuments(d.documents || []) }
+      if (rulesRes.ok) { const d = await rulesRes.json(); setRules(d.rules || []) }
+      if (faqsRes.ok) { const d = await faqsRes.json(); setFaqs(d.faqs || []) }
     } catch (err) {
       console.error("Fetch error:", err)
     } finally {
@@ -111,13 +91,8 @@ export default function BrainLabPage() {
     }
   }, [id])
 
-  useEffect(() => {
-    fetchAll()
-  }, [fetchAll])
+  useEffect(() => { fetchAll() }, [fetchAll])
 
-  // ============================================
-  // SAVE PROMPTS
-  // ============================================
   const savePrompts = async () => {
     setSaving(true)
     try {
@@ -135,9 +110,6 @@ export default function BrainLabPage() {
     }
   }
 
-  // ============================================
-  // DOCUMENT CRUD
-  // ============================================
   const addDocument = async () => {
     if (!newDocTitle.trim() || !newDocContent.trim()) return
     try {
@@ -147,8 +119,7 @@ export default function BrainLabPage() {
         body: JSON.stringify({ name: newDocTitle, content: newDocContent }),
       })
       if (!res.ok) throw new Error("Add failed")
-      setNewDocTitle("")
-      setNewDocContent("")
+      setNewDocTitle(""); setNewDocContent("")
       fetchAll()
     } catch {
       toast({ title: "Fehler beim Hinzufügen", variant: "destructive" })
@@ -170,9 +141,6 @@ export default function BrainLabPage() {
     }
   }
 
-  // ============================================
-  // RULE CRUD
-  // ============================================
   const addRule = async () => {
     if (!newRuleTitle.trim() || !newRuleContent.trim()) return
     try {
@@ -182,9 +150,7 @@ export default function BrainLabPage() {
         body: JSON.stringify({ name: newRuleTitle, rule: newRuleContent, severity: newRuleSeverity }),
       })
       if (!res.ok) throw new Error("Add failed")
-      setNewRuleTitle("")
-      setNewRuleContent("")
-      setNewRuleSeverity("warning")
+      setNewRuleTitle(""); setNewRuleContent(""); setNewRuleSeverity("warning")
       fetchAll()
     } catch {
       toast({ title: "Fehler beim Hinzufügen", variant: "destructive" })
@@ -206,9 +172,6 @@ export default function BrainLabPage() {
     }
   }
 
-  // ============================================
-  // FAQ CRUD
-  // ============================================
   const addFAQ = async () => {
     if (!newFAQQuestion.trim() || !newFAQAnswer.trim()) return
     try {
@@ -218,8 +181,7 @@ export default function BrainLabPage() {
         body: JSON.stringify({ question: newFAQQuestion, answer: newFAQAnswer }),
       })
       if (!res.ok) throw new Error("Add failed")
-      setNewFAQQuestion("")
-      setNewFAQAnswer("")
+      setNewFAQQuestion(""); setNewFAQAnswer("")
       fetchAll()
     } catch {
       toast({ title: "Fehler beim Hinzufügen", variant: "destructive" })
@@ -241,133 +203,100 @@ export default function BrainLabPage() {
     }
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
       </div>
     )
   }
 
+  const TABS = [
+    { key: "prompts" as const, label: "System Prompts" },
+    { key: "documents" as const, label: `Dokumente (${documents.length})` },
+    { key: "rules" as const, label: `Regeln (${rules.length})` },
+    { key: "faqs" as const, label: `FAQs (${faqs.length})` },
+  ]
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-card border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-4">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">BrainLab</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">AI Personality & Knowledge Base</p>
+            <h1 className="text-xl font-semibold text-foreground">BrainLab</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">KI-Persönlichkeit & Wissensdatenbank</p>
           </div>
           <BoardNav />
         </div>
       </div>
 
-      {/* BrainLab Tabs */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800 mb-6">
-          {[
-            { key: "prompts" as const, label: "System Prompts" },
-            { key: "documents" as const, label: `Documents (${documents.length})` },
-            { key: "rules" as const, label: `Rules (${rules.length})` },
-            { key: "faqs" as const, label: `FAQs (${faqs.length})` },
-          ].map((tab) => (
+        {/* Tab navigation */}
+        <div className="flex gap-0 border-b border-border mb-6">
+          {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={cn(
+                "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
                 activeTab === tab.key
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:border-gray-300"
-              }`}
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              )}
             >
               {tab.label}
             </button>
           ))}
         </div>
 
-        {/* ============================================
-            TAB 1: SYSTEM PROMPTS
-        ============================================ */}
+        {/* ── PROMPTS ── */}
         {activeTab === "prompts" && (
-          <div className="space-y-6 max-w-3xl">
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Prompt</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Defines the AI&apos;s core personality and role</p>
-              <textarea
-                value={brainData.systemPrompt || ""}
-                onChange={(e) => setBrainData({ ...brainData, systemPrompt: e.target.value })}
-                rows={6}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder="You are a friendly and competent insurance broker..."
-              />
-            </div>
+          <div className="space-y-4 max-w-3xl">
+            {[
+              { key: "systemPrompt" as keyof BrainData, title: "System Prompt", desc: "Definiert die Kernpersönlichkeit und Rolle der KI", rows: 6, placeholder: "Du bist ein freundlicher und kompetenter Versicherungsmakler…" },
+              { key: "stylePrompt" as keyof BrainData, title: "Style Prompt", desc: "Definiert Ton, Länge und Kommunikationsstil", rows: 4, placeholder: "Antworte immer kurz und prägnant (max. 2 Sätze)…" },
+              { key: "infoPrompt" as keyof BrainData, title: "Info Prompt", desc: "Produktwissen und Fachinformationen", rows: 4, placeholder: "Produkt A kostet 50 €/Monat, deckt bis zu 100.000 € ab…" },
+              { key: "rulePrompt" as keyof BrainData, title: "Rule Prompt", desc: "Harte Grenzen und Guardrails", rows: 4, placeholder: "- Keine Garantien geben\n- Keine medizinischen Ratschläge…" },
+            ].map(({ key, title, desc, rows, placeholder }) => (
+              <div key={key} className="bg-card rounded-xl border border-border p-5">
+                <h3 className="text-sm font-semibold text-foreground mb-1">{title}</h3>
+                <p className="text-xs text-muted-foreground mb-3">{desc}</p>
+                <textarea
+                  value={brainData[key] || ""}
+                  onChange={(e) => setBrainData({ ...brainData, [key]: e.target.value })}
+                  rows={rows}
+                  className={taClass}
+                  placeholder={placeholder}
+                />
+              </div>
+            ))}
 
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Style Prompt</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Defines tone, length, and communication style</p>
-              <textarea
-                value={brainData.stylePrompt || ""}
-                onChange={(e) => setBrainData({ ...brainData, stylePrompt: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder="Always answer short and concise (max. 2 sentences)..."
-              />
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Info Prompt</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Product knowledge and factual information</p>
-              <textarea
-                value={brainData.infoPrompt || ""}
-                onChange={(e) => setBrainData({ ...brainData, infoPrompt: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder="Product A costs €50/month, covers up to €100,000..."
-              />
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Rule Prompt</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Hard constraints and guardrails</p>
-              <textarea
-                value={brainData.rulePrompt || ""}
-                onChange={(e) => setBrainData({ ...brainData, rulePrompt: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder="- Never give guarantees&#10;- No medical advice&#10;- Always refer to a human agent when..."
-              />
-            </div>
-
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Channel-Switch Template</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+            <div className="bg-card rounded-xl border border-border p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-1">Channel-Switch Template</h3>
+              <p className="text-xs text-muted-foreground mb-1">
                 Vorlage für die Nachricht, die beim Channel-Wechsel gesendet wird.
               </p>
-              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
-                Verfügbare Variablen: <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">{"{channel}"}</code>{" "}
-                <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">{"{link}"}</code>
+              <p className="text-xs text-primary mb-3">
+                Variablen:{" "}
+                <code className="bg-primary/10 px-1.5 py-0.5 rounded text-[10px]">{"{channel}"}</code>{" "}
+                <code className="bg-primary/10 px-1.5 py-0.5 rounded text-[10px]">{"{link}"}</code>
               </p>
               <textarea
                 value={brainData.channelSwitchTemplate || ""}
                 onChange={(e) => setBrainData({ ...brainData, channelSwitchTemplate: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                className={taClass}
                 placeholder="Du kannst diese Unterhaltung auch auf {channel} weiterführen: {link}"
               />
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={savePrompts}
-                disabled={saving}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
-              >
-                {saving ? "Speichern..." : "Alle Prompts speichern"}
-              </button>
-              <button
+            <div className="flex gap-2">
+              <Button onClick={savePrompts} disabled={saving}>
+                {saving ? "Speichern…" : "Alle Prompts speichern"}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   fetch(`/api/boards/${id}/brain/simulate`, {
                     method: "POST",
@@ -378,72 +307,62 @@ export default function BrainLabPage() {
                     .then(data => toast({ title: "Simulation erfolgreich", description: data?.message || "KI-Antwort erhalten" }))
                     .catch(() => toast({ title: "Simulation fehlgeschlagen", variant: "destructive" }))
                 }}
-                className="px-6 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 font-medium"
               >
                 Test-Simulation
-              </button>
+              </Button>
             </div>
           </div>
         )}
 
-        {/* ============================================
-            TAB 2: DOCUMENTS
-        ============================================ */}
+        {/* ── DOCUMENTS ── */}
         {activeTab === "documents" && (
-          <div className="space-y-6">
-            {/* Add New Document */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Document</h3>
-              <div className="space-y-4">
+          <div className="space-y-4">
+            <div className="bg-card rounded-xl border border-border p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Dokument hinzufügen</h3>
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Titel</label>
                   <input
                     type="text"
                     value={newDocTitle}
                     onChange={(e) => setNewDocTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Product Catalog 2024"
+                    className={inputClass}
+                    placeholder="z.B. Produktkatalog 2024"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Inhalt</label>
                   <textarea
                     value={newDocContent}
                     onChange={(e) => setNewDocContent(e.target.value)}
                     rows={6}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    placeholder="Paste document content here..."
+                    className={taClass}
+                    placeholder="Dokumentinhalt hier einfügen…"
                   />
                 </div>
-                <button
-                  onClick={addDocument}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-                >
-                  + Add Document
-                </button>
+                <Button size="sm" onClick={addDocument}>+ Dokument hinzufügen</Button>
               </div>
             </div>
 
-            {/* Documents List */}
             <div className="space-y-3">
               {documents.length === 0 ? (
-                <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <p className="text-gray-500 dark:text-gray-400">No documents yet. Add your first knowledge document above.</p>
+                <div className="text-center py-12 bg-card rounded-xl border border-border">
+                  <p className="text-sm text-muted-foreground">Noch keine Dokumente. Füge dein erstes Wissensdokument hinzu.</p>
                 </div>
               ) : (
                 documents.map((doc) => (
-                  <div key={doc.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+                  <div key={doc.id} className="bg-card rounded-xl border border-border p-5">
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-gray-900 dark:text-white">{doc.name}</h4>
-                        <p className="text-xs text-gray-400 mt-1">{new Date(doc.createdAt).toLocaleDateString()}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-3 whitespace-pre-wrap">{doc.content}</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-foreground">{doc.name}</h4>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(doc.createdAt).toLocaleDateString("de-DE")}</p>
+                        <p className="text-xs text-muted-foreground mt-3 whitespace-pre-wrap">{doc.content}</p>
                       </div>
                       <button
                         onClick={() => deleteDocument(doc.id)}
-                        className="ml-4 px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        className="ml-4 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
                       >
-                        Delete
+                        Löschen
                       </button>
                     </div>
                   </div>
@@ -453,149 +372,134 @@ export default function BrainLabPage() {
           </div>
         )}
 
-        {/* ============================================
-            TAB 3: RULES
-        ============================================ */}
+        {/* ── RULES ── */}
         {activeTab === "rules" && (
-          <div className="space-y-6">
-            {/* Add New Rule */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Rule</h3>
-              <div className="space-y-4">
+          <div className="space-y-4">
+            <div className="bg-card rounded-xl border border-border p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Regel hinzufügen</h3>
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Titel</label>
                   <input
                     type="text"
                     value={newRuleTitle}
                     onChange={(e) => setNewRuleTitle(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. No Medical Advice"
+                    className={inputClass}
+                    placeholder="z.B. Keine Medizinischen Ratschläge"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Inhalt</label>
                   <textarea
                     value={newRuleContent}
                     onChange={(e) => setNewRuleContent(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    placeholder="Never provide medical advice. Always refer to a licensed physician..."
+                    className={taClass}
+                    placeholder="Gib niemals medizinische Ratschläge. Verweise immer auf einen zugelassenen Arzt…"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Schwere</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Schwere</label>
                   <select
                     value={newRuleSeverity}
                     onChange={(e) => setNewRuleSeverity(e.target.value)}
-                    className="w-32 px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-36 px-3 py-2 text-sm border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   >
-                    <option value="warning">Warning</option>
-                    <option value="error">Error</option>
+                    <option value="warning">Warnung</option>
+                    <option value="error">Fehler</option>
                   </select>
                 </div>
-                <button
-                  onClick={addRule}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-                >
-                  + Add Rule
-                </button>
+                <Button size="sm" onClick={addRule}>+ Regel hinzufügen</Button>
               </div>
             </div>
 
-            {/* Rules List */}
             <div className="space-y-3">
               {rules.length === 0 ? (
-                <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <p className="text-gray-500 dark:text-gray-400">No rules yet. Add your first guardrail rule above.</p>
+                <div className="text-center py-12 bg-card rounded-xl border border-border">
+                  <p className="text-sm text-muted-foreground">Noch keine Regeln. Füge deine erste Guardrail-Regel hinzu.</p>
                 </div>
               ) : (
                 rules.map((rule) => (
-                    <div key={rule.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <h4 className="font-semibold text-gray-900 dark:text-white">{rule.name}</h4>
-                            <span className={`px-2 py-0.5 text-xs rounded-full ${
-                              rule.severity === "error" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
-                            }`}>
-                              {rule.severity || "warning"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-1">{new Date(rule.createdAt).toLocaleDateString()}</p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">{rule.rule}</p>
+                  <div key={rule.id} className="bg-card rounded-xl border border-border p-5">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2.5">
+                          <h4 className="text-sm font-semibold text-foreground">{rule.name}</h4>
+                          <span className={cn(
+                            "px-2 py-0.5 text-[10px] rounded-md font-medium",
+                            rule.severity === "error"
+                              ? "bg-destructive/10 text-destructive"
+                              : "bg-warning/15 text-warning"
+                          )}>
+                            {rule.severity === "error" ? "Fehler" : "Warnung"}
+                          </span>
                         </div>
-                        <button
-                          onClick={() => deleteRule(rule.id)}
-                          className="ml-4 px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                        >
-                          Delete
-                        </button>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(rule.createdAt).toLocaleDateString("de-DE")}</p>
+                        <p className="text-xs text-muted-foreground mt-3">{rule.rule}</p>
                       </div>
+                      <button
+                        onClick={() => deleteRule(rule.id)}
+                        className="ml-4 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
+                      >
+                        Löschen
+                      </button>
                     </div>
-                  ))
+                  </div>
+                ))
               )}
             </div>
           </div>
         )}
 
-        {/* ============================================
-            TAB 4: FAQS
-        ============================================ */}
+        {/* ── FAQs ── */}
         {activeTab === "faqs" && (
-          <div className="space-y-6">
-            {/* Add New FAQ */}
-            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add FAQ</h3>
-              <div className="space-y-4">
+          <div className="space-y-4">
+            <div className="bg-card rounded-xl border border-border p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">FAQ hinzufügen</h3>
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Question</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Frage</label>
                   <input
                     type="text"
                     value={newFAQQuestion}
                     onChange={(e) => setNewFAQQuestion(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. What are your opening hours?"
+                    className={inputClass}
+                    placeholder="z.B. Was sind Ihre Öffnungszeiten?"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Answer</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Antwort</label>
                   <textarea
                     value={newFAQAnswer}
                     onChange={(e) => setNewFAQAnswer(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="We are open Monday to Friday, 9 AM to 6 PM..."
+                    className={taClass}
+                    placeholder="Wir sind Montag bis Freitag, 9–18 Uhr erreichbar…"
                   />
                 </div>
-                <button
-                  onClick={addFAQ}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-                >
-                  + Add FAQ
-                </button>
+                <Button size="sm" onClick={addFAQ}>+ FAQ hinzufügen</Button>
               </div>
             </div>
 
-            {/* FAQs List */}
             <div className="space-y-3">
               {faqs.length === 0 ? (
-                <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <p className="text-gray-500 dark:text-gray-400">No FAQs yet. Add your first frequently asked question above.</p>
+                <div className="text-center py-12 bg-card rounded-xl border border-border">
+                  <p className="text-sm text-muted-foreground">Noch keine FAQs. Füge deine erste häufig gestellte Frage hinzu.</p>
                 </div>
               ) : (
                 faqs.map((faq) => (
-                  <div key={faq.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+                  <div key={faq.id} className="bg-card rounded-xl border border-border p-5">
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-gray-900 dark:text-white">Q: {faq.question}</h4>
-                        <p className="text-xs text-gray-400 mt-1">{new Date(faq.createdAt).toLocaleDateString()}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-3">A: {faq.answer}</p>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-foreground">F: {faq.question}</h4>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(faq.createdAt).toLocaleDateString("de-DE")}</p>
+                        <p className="text-xs text-muted-foreground mt-3">A: {faq.answer}</p>
                       </div>
                       <button
                         onClick={() => deleteFAQ(faq.id)}
-                        className="ml-4 px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        className="ml-4 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
                       >
-                        Delete
+                        Löschen
                       </button>
                     </div>
                   </div>

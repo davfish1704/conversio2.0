@@ -62,10 +62,10 @@ export default function BoardFlowPage() {
   }, [fetchAll])
 
   if (loading) return <BoardSkeleton />
-  if (!board) return <div className="p-8 text-center text-gray-500">Board not found</div>
+  if (!board) return <div className="p-8 text-center text-muted-foreground text-sm">Board nicht gefunden</div>
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-background">
       <BoardTabs board={board} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

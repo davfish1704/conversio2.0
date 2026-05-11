@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-import { assertBoardMemberAccess } from "@/lib/auth-helpers"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 import { createInvite } from "@/lib/channel-invites"
 import { sendMessage } from "@/lib/messaging/dispatcher"
 
@@ -24,8 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { leadId: str
   })
   if (!lead) return NextResponse.json({ error: "Lead nicht gefunden" }, { status: 404 })
 
-  const denied = await assertBoardMemberAccess(lead.boardId, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: lead.boardId }) } catch (e) { return toNextResponse(e) }
 
   const body = await req.json().catch(() => ({}))
   const { targetChannelId, sendNow = false, reason } = body as {

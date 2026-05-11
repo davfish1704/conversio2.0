@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { generateTelegramInviteLink } from "@/lib/messaging/telegram-invite"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function GET(
   req: NextRequest,
@@ -16,10 +17,7 @@ export async function GET(
   })
   if (!lead?.boardId) return NextResponse.json({ error: "Lead not found" }, { status: 404 })
 
-  const membership = await prisma.boardMember.findFirst({
-    where: { boardId: lead.boardId, userId: session.user.id },
-  })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  try { await assertBoardAccess({ userId: session.user.id, boardId: lead.boardId }) } catch (e) { return toNextResponse(e) }
 
   try {
     const link = await generateTelegramInviteLink(params.leadId)

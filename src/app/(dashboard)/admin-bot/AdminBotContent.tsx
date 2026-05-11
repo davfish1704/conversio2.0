@@ -91,7 +91,7 @@ export default function AdminBotContent() {
   const statusConfig: Record<string, { color: string; bg: string }> = {
     OPEN: { color: "text-red-700", bg: "bg-red-100" },
     RESOLVED: { color: "text-green-700", bg: "bg-green-100" },
-    IGNORED: { color: "text-gray-700", bg: "bg-gray-100" },
+    IGNORED: { color: "text-muted-foreground", bg: "bg-muted" },
   }
 
   if (loading) {
@@ -113,8 +113,8 @@ export default function AdminBotContent() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Bot-Monitoring</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">KI-Überwachung und Gesprächsqualität</p>
+          <h1 className="text-xl font-semibold text-foreground">Bot-Monitoring</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">KI-Überwachung und Gesprächsqualität</p>
         </div>
         <button
           onClick={handleScan}
@@ -157,7 +157,7 @@ export default function AdminBotContent() {
           { label: "Offene Reports", value: openCount, color: "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400" },
           { label: "Hänger", value: stuckCount, color: "bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400" },
           { label: "Schleifen", value: loopCount, color: "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400" },
-          { label: "Fehler", value: errorCount, color: "bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300" },
+          { label: "Fehler", value: errorCount, color: "bg-muted text-foreground" },
         ].map((stat) => (
           <div key={stat.label} className={`rounded-xl p-4 ${stat.color}`}>
             <div className="text-2xl font-bold">{stat.value}</div>
@@ -175,7 +175,7 @@ export default function AdminBotContent() {
             className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition ${
               activeFilter === filter
                 ? "bg-blue-600 text-white border-blue-600"
-                : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800"
+                : "bg-card border-border hover:bg-muted text-muted-foreground hover:text-foreground"
             }`}
           >
             {filter === "all" ? "Alle" : filter === "OPEN" ? "Offen" : "Gelöst"}
@@ -186,9 +186,9 @@ export default function AdminBotContent() {
       {/* Reports List */}
       <div className="space-y-3">
         {filteredReports.length === 0 ? (
-          <div className="text-center py-12 bg-white dark:bg-gray-900 rounded-xl border border-gray-200">
-            <p className="text-gray-500 dark:text-gray-400 mb-2">Noch keine Reports vorhanden.</p>
-            <p className="text-sm text-gray-400">Klicke auf &quot;Probleme scannen&quot;, um deine Gespräche zu prüfen.</p>
+          <div className="text-center py-12 bg-card rounded-xl border border-border">
+            <p className="text-muted-foreground mb-2">Noch keine Reports vorhanden.</p>
+            <p className="text-sm text-muted-foreground/70">Klicke auf &quot;Probleme scannen&quot;, um deine Gespräche zu prüfen.</p>
           </div>
         ) : (
           filteredReports.map((report) => {
@@ -198,8 +198,8 @@ export default function AdminBotContent() {
             return (
               <div
                 key={report.id}
-                className={`bg-white dark:bg-gray-900 rounded-xl border-2 p-5 transition ${
-                  report.status === "OPEN" ? "border-red-200" : "border-gray-200"
+                className={`bg-card rounded-xl border-2 p-5 transition ${
+                  report.status === "OPEN" ? "border-destructive/30" : "border-border"
                 }`}
               >
                 <div className="flex items-start justify-between">
@@ -213,11 +213,11 @@ export default function AdminBotContent() {
                         {report.status}
                       </span>
                     </div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                    <h3 className="font-semibold text-foreground">
                       {report.boardName} {report.stateName && `/ ${report.stateName}`}
                     </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{report.message}</p>
-                    <p className="text-xs text-gray-400 mt-2">
+                    <p className="text-sm text-foreground/80 mt-1">{report.message}</p>
+                    <p className="text-xs text-muted-foreground mt-2">
                       {new Date(report.createdAt).toLocaleString()}
                     </p>
                   </div>
@@ -233,7 +233,7 @@ export default function AdminBotContent() {
                         </button>
                         <button
                           onClick={() => deleteReport(report.id)}
-                          className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 rounded-lg transition"
+                          className="px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted rounded-lg transition-colors"
                         >
                           Ignorieren
                         </button>

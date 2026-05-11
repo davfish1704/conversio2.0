@@ -4,7 +4,11 @@ import { aiRegistry } from "@/lib/ai/registry"
 export async function summarizeConversation(conversationId: string): Promise<void> {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { boardId: true, summaryUpdatedAt: true, conversationSummary: true },
+    select: {
+      boardId: true,
+      summaryUpdatedAt: true,
+      conversationSummary: true,
+    },
   })
   if (!conversation?.boardId) return
 
@@ -17,11 +21,15 @@ export async function summarizeConversation(conversationId: string): Promise<voi
   if (messages.length < 5) return
 
   const transcript = messages
-    .map((m) => `${m.direction === "INBOUND" ? "Nutzer" : "Assistent"}: ${m.content}`)
+    .map((m) =>
+      m.direction === "INBOUND"
+        ? `User: ${m.content}`
+        : `Assistant: ${m.content}`,
+    )
     .join("\n")
 
   const prevSummary = conversation.conversationSummary
-    ? `Vorherige Zusammenfassung: ${conversation.conversationSummary}\n\n`
+    ? `Previous summary: ${conversation.conversationSummary}\n\n`
     : ""
 
   const response = await aiRegistry.execute({
@@ -30,11 +38,12 @@ export async function summarizeConversation(conversationId: string): Promise<voi
     messages: [
       {
         role: "system",
-        content: "Du erstellst präzise Gesprächszusammenfassungen. Antworte nur mit dem reinen Zusammenfassungstext, ohne Einleitung oder Formatierung.",
+        content:
+          "You create precise conversation summaries. Reply with the summary text only, no introduction or formatting. Write in the same language as the conversation.",
       },
       {
         role: "user",
-        content: `${prevSummary}Fasse dieses Gespräch in 3-5 Sätzen zusammen. Fokus auf: gesammelte Daten, Nutzerpräferenzen, getroffene Entscheidungen, offene Fragen, emotionaler Ton.\n\n${transcript}`,
+        content: `${prevSummary}Summarize this conversation in 3-5 sentences. Focus on: collected data, user preferences, decisions made, open questions, emotional tone.\n\n${transcript}`,
       },
     ],
     maxTokens: 300,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useContext, useCallback } from "react"
+import { useState, useEffect, useContext, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -10,63 +10,44 @@ import {
   Bot,
   Users,
   Settings,
-  ChevronDown,
-  ChevronLeft,
   ChevronRight,
-  Zap,
-  PenTool,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sun,
   Moon,
-  LogOut,
+  Zap,
   Coins,
-  Bell,
+  PenTool,
 } from "lucide-react"
-import { signOut } from "next-auth/react"
 import { LanguageContext } from "@/lib/LanguageContext"
 import { useTheme } from "@/lib/ThemeContext"
 import { FEATURES } from "@/lib/features"
 import { useSidebar } from "@/lib/SidebarContext"
+import { cn } from "@/lib/utils"
 
-interface SidebarNavigationProps {
-  user: {
-    name?: string | null
-    email?: string | null
-    image?: string | null
-  }
+interface Board { id: string; name: string; isActive: boolean }
+
+interface NavItemDef {
+  label: string
+  href: string
+  icon: React.ElementType
+  isCrm?: boolean
+  badge?: number
 }
 
-interface Board {
-  id: string
-  name: string
-  isActive: boolean
-}
-
-export default function SidebarNavigation({ user }: SidebarNavigationProps) {
+export default function SidebarNavigation({
+  user,
+}: {
+  user: { name?: string | null; email?: string | null; image?: string | null }
+}) {
   const { t } = useContext(LanguageContext)
   const { theme, toggleTheme } = useTheme()
-  const { collapsed, toggleCollapsed } = useSidebar()
+  const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar()
   const pathname = usePathname()
+
   const [crmOpen, setCrmOpen] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
   const [boards, setBoards] = useState<Board[]>([])
   const [lastBoardId, setLastBoardId] = useState<string | null>(null)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [unreadNotifications, setUnreadNotifications] = useState(0)
-  const userMenuRef = useRef<HTMLDivElement>(null)
-  const crmRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (crmRef.current && !crmRef.current.contains(e.target as Node)) {
-        setCrmOpen(false)
-      }
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem("crm_last_board_id")
@@ -74,145 +55,135 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
   }, [pathname])
 
   useEffect(() => {
-    let cancelled = false
-    async function poll() {
-      try {
-        const res = await fetch("/api/admin/notifications?unread=true")
-        if (res.ok && !cancelled) {
-          const data = await res.json()
-          setUnreadNotifications(data.notifications?.length ?? 0)
-        }
-      } catch {}
-    }
-    poll()
-    const interval = setInterval(poll, 60_000)
-    return () => { cancelled = true; clearInterval(interval) }
-  }, [])
-
-  useEffect(() => {
-    if (crmOpen) {
+    if (crmOpen && boards.length === 0) {
       fetch("/api/boards")
         .then((r) => r.json())
-        .then((data) => setBoards(data.boards || []))
+        .then((d) => setBoards((d.boards || []).filter((b: Board) => b.isActive)))
         .catch(() => {})
     }
-  }, [crmOpen])
+  }, [crmOpen, boards.length])
 
-  const navItems = [
-    { label: t("nav.dashboard"), href: "/dashboard", icon: LayoutDashboard },
-    { label: t("nav.crm"), href: "/crm", icon: KanbanSquare, isCrm: true },
-    { label: t("nav.reports"), href: "/reports", icon: BarChart3 },
-    ...(FEATURES.builder ? [{ label: "Builder", href: "/builder", icon: PenTool }] : []),
-    { label: t("nav.adminBot"), href: "/admin-bot", icon: Bot },
-    { label: "Token Usage", href: "/admin-usage", icon: Coins },
-    { label: "Notifications", href: "/admin-notifications", icon: Bell, badge: unreadNotifications },
-    { label: t("nav.team"), href: "/team", icon: Users },
-    { label: t("nav.settings"), href: "/settings", icon: Settings },
-  ]
+  const closeMobile = useCallback(() => setMobileOpen(false), [setMobileOpen])
+
+  const isCrmActive = pathname.startsWith("/boards/") || pathname === "/crm"
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard"
-    if (href === "/crm") return pathname.startsWith("/boards/") || pathname === "/crm"
+    if (href === "/crm") return isCrmActive
     return pathname === href || pathname.startsWith(href + "/")
   }
 
-  const closeMobile = () => setMobileOpen(false)
+  const mainNav: NavItemDef[] = [
+    { label: t("nav.dashboard") || "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { label: t("nav.crm") || "CRM", href: "/crm", icon: KanbanSquare, isCrm: true },
+    { label: t("nav.reports") || "Berichte", href: "/reports", icon: BarChart3 },
+    ...(FEATURES.builder ? [{ label: t("sidebar.builder") || "Builder", href: "/builder", icon: PenTool }] : []),
+  ]
+
+  const adminNav: NavItemDef[] = [
+    { label: t("nav.adminBot") || "Admin Bot", href: "/admin-bot", icon: Bot },
+    { label: t("sidebar.tokenUsage"), href: "/admin-usage", icon: Coins },
+    { label: t("nav.team") || "Team", href: "/team", icon: Users },
+  ]
+
+  const linkClass = (active: boolean) =>
+    cn(
+      "flex items-center gap-2.5 px-2.5 rounded-md text-sm transition-colors h-8 w-full",
+      active
+        ? "bg-sidebar-accent text-foreground font-medium"
+        : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+    )
 
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Mobile backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] md:hidden"
           onClick={closeMobile}
         />
       )}
 
-      {/* Mobile Toggle */}
-      <button
-        className="fixed top-3 left-3 z-50 md:hidden p-2 rounded-lg bg-white dark:bg-gray-900 shadow border border-gray-200 dark:border-gray-700"
-        onClick={() => setMobileOpen(true)}
-      >
-        <KanbanSquare className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-      </button>
-
-      {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-30 h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transition-all duration-300 flex flex-col
-          ${mobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
-          ${collapsed ? "w-16" : "w-60"}
-        `}
+        className={cn(
+          "fixed top-0 left-0 z-50 h-full flex flex-col",
+          "bg-sidebar border-r border-sidebar-border",
+          "transition-all duration-200 ease-out",
+          collapsed ? "w-14" : "w-60",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
       >
-        {/* Logo + Collapse Toggle */}
-        <div className="flex items-center h-14 px-3 border-b border-gray-200 dark:border-gray-800 shrink-0">
-          <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0" onClick={closeMobile}>
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
-              <Zap className="w-5 h-5 text-white fill-white" />
+        {/* Header */}
+        <div className="h-12 flex items-center px-3 border-b border-sidebar-border shrink-0 gap-2">
+          <Link
+            href="/dashboard"
+            onClick={closeMobile}
+            className="flex items-center gap-2.5 min-w-0"
+          >
+            <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
+              <Zap className="w-3.5 h-3.5 text-primary-foreground" strokeWidth={2.5} />
             </div>
             {!collapsed && (
-              <span className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">
+              <span className="text-sm font-semibold text-foreground tracking-tight truncate">
                 Conversio
               </span>
             )}
           </Link>
 
-          {/* Collapse Toggle - Desktop */}
-          <button
-            onClick={toggleCollapsed}
-            className="hidden md:flex ml-auto p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition text-gray-500"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
-            )}
-          </button>
+          {!collapsed ? (
+            <button
+              onClick={toggleCollapsed}
+              className="hidden md:flex ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+              aria-label={t("sidebar.toggleSidebar")}
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={toggleCollapsed}
+              className="hidden md:flex ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+              aria-label={t("sidebar.toggleSidebar")}
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* Nav Items */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {navItems.map((item) => {
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+          {/* Main items */}
+          {mainNav.map((item) => {
             if (item.isCrm) {
               return (
-                <div key={item.label} className="relative" ref={crmRef}>
+                <div key={item.href}>
                   <button
-                    onClick={() => { setCrmOpen(!crmOpen); closeMobile() }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition ${
-                      isActive("/crm")
-                        ? "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
-                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    }`}
+                    onClick={() => {
+                      setCrmOpen((o) => !o)
+                    }}
+                    className={linkClass(isCrmActive)}
                   >
-                    <item.icon className="w-4 h-4 flex-shrink-0" />
+                    <item.icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
                     {!collapsed && (
                       <>
                         <span className="flex-1 text-left">{item.label}</span>
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform ${crmOpen ? "rotate-180" : ""}`}
+                        <ChevronRight
+                          className={cn(
+                            "w-3.5 h-3.5 transition-transform duration-150 text-muted-foreground",
+                            crmOpen && "rotate-90"
+                          )}
                         />
                       </>
                     )}
                   </button>
 
                   {crmOpen && !collapsed && (
-                    <div className="ml-4 mt-0.5 space-y-0.5 border-l border-gray-200 dark:border-gray-700 pl-3">
-                      {lastBoardId ? (
-                        <Link
-                          href={`/boards/${lastBoardId}`}
-                          onClick={closeMobile}
-                          className={`block px-3 py-2 text-xs rounded-lg transition ${
-                            pathname === `/boards/${lastBoardId}`
-                              ? "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 font-medium"
-                              : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                          }`}
-                        >
-                          Pipeline
-                        </Link>
-                      ) : (
-                        <p className="px-3 py-2 text-xs text-gray-400">Kein Board ausgewählt</p>
+                    <div className="ml-[22px] mt-0.5 mb-0.5 pl-3 border-l border-border space-y-0.5 animate-slide-down">
+                      {boards.length === 0 && (
+                        <p className="px-2 py-1 text-xs text-muted-foreground">
+                          {t("sidebar.noBoard")}
+                        </p>
                       )}
-                      {boards.filter(b => b.isActive).slice(0, 5).map((board) => (
+                      {boards.map((board) => (
                         <Link
                           key={board.id}
                           href={`/boards/${board.id}`}
@@ -220,15 +191,31 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
                             localStorage.setItem("crm_last_board_id", board.id)
                             closeMobile()
                           }}
-                          className={`block px-3 py-2 text-xs rounded-lg transition ${
+                          className={cn(
+                            "flex items-center gap-2 px-2 h-7 rounded-md text-xs transition-colors truncate",
                             pathname === `/boards/${board.id}`
-                              ? "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 font-medium"
-                              : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                          }`}
+                              ? "text-foreground font-medium bg-sidebar-accent"
+                              : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                          )}
                         >
-                          {board.name}
+                          <span className="truncate">{board.name}</span>
                         </Link>
                       ))}
+                      {lastBoardId && (
+                        <Link
+                          href={`/boards/${lastBoardId}/settings`}
+                          onClick={closeMobile}
+                          className={cn(
+                            "flex items-center gap-2 px-2 h-7 rounded-md text-xs transition-colors",
+                            pathname.endsWith("/settings") && pathname.includes("/boards/")
+                              ? "text-foreground font-medium"
+                              : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                          )}
+                        >
+                          <Settings className="w-3 h-3 shrink-0" />
+                          <span>{t("sidebar.settings")}</span>
+                        </Link>
+                      )}
                     </div>
                   )}
                 </div>
@@ -237,81 +224,60 @@ export default function SidebarNavigation({ user }: SidebarNavigationProps) {
 
             return (
               <Link
-                key={item.label}
+                key={item.href}
                 href={item.href}
                 onClick={closeMobile}
-                className={`flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition ${
-                  isActive(item.href)
-                    ? "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
+                className={linkClass(isActive(item.href))}
               >
-                <span className="relative flex-shrink-0">
-                  <item.icon className="w-4 h-4" />
-                  {(item as { badge?: number }).badge ? (
-                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold leading-none">
-                      {(item as { badge?: number }).badge! > 9 ? "9+" : (item as { badge?: number }).badge}
-                    </span>
-                  ) : null}
-                </span>
-                {!collapsed && <span className="flex-1">{item.label}</span>}
+                <item.icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             )
           })}
+
+          {/* Admin divider */}
+          <div className="py-1.5">
+            <div className="border-t border-border" />
+          </div>
+
+          {adminNav.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={closeMobile}
+              className={linkClass(isActive(item.href))}
+            >
+              <item.icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </Link>
+          ))}
         </nav>
 
-        {/* Bottom Section: Theme Toggle + User */}
-        <div className="border-t border-gray-200 dark:border-gray-800 p-2 shrink-0 space-y-1">
-          {/* Theme Toggle */}
+        {/* Bottom */}
+        <div className="border-t border-sidebar-border p-2 space-y-0.5 shrink-0">
+          <Link
+            href="/settings"
+            onClick={closeMobile}
+            className={linkClass(isActive("/settings"))}
+          >
+            <Settings className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+            {!collapsed && <span>{t("sidebar.settings")}</span>}
+          </Link>
+
           <button
             onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition"
+            className={linkClass(false)}
+            aria-label={t("sidebar.toggleTheme")}
           >
-            {theme === "dark" ? <Sun className="w-4 h-4 flex-shrink-0" /> : <Moon className="w-4 h-4 flex-shrink-0" />}
-            {!collapsed && <span>{theme === "dark" ? "Light" : "Dark"}</span>}
-          </button>
-
-          {/* User Menu */}
-          <div className="relative" ref={userMenuRef}>
-            <button
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition"
-            >
-              {user.image ? (
-                <img src={user.image} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200 flex-shrink-0" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {(user.name || user.email || "?").charAt(0).toUpperCase()}
-                </div>
-              )}
-              {!collapsed && (
-                <div className="flex-1 min-w-0 text-left">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                </div>
-              )}
-            </button>
-
-            {userMenuOpen && (
-              <div className="absolute bottom-full left-2 right-2 mb-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg py-2 z-50">
-                <Link
-                  href="/settings"
-                  onClick={() => { setUserMenuOpen(false); closeMobile() }}
-                  className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                >
-                  <Settings className="w-4 h-4" />
-                  {!collapsed ? t("nav.settings") : ""}
-                </Link>
-                <button
-                  onClick={() => { signOut({ callbackUrl: "/login" }); closeMobile() }}
-                  className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-                >
-                  <LogOut className="w-4 h-4" />
-                  {!collapsed ? t("nav.signOut") || "Abmelden" : ""}
-                </button>
-              </div>
+            {theme === "dark" ? (
+              <Sun className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+            ) : (
+              <Moon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
             )}
-          </div>
+            {!collapsed && (
+              <span>{theme === "dark" ? t("sidebar.lightTheme") : t("sidebar.darkTheme")}</span>
+            )}
+          </button>
         </div>
       </aside>
     </>

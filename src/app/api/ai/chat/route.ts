@@ -3,6 +3,7 @@ import { auth } from "@/auth"
 import { rateLimit } from "@/lib/rate-limit"
 import { aiRegistry } from "@/lib/ai/registry"
 import type { AIMessage } from "@/lib/ai/providers/types"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -25,6 +26,14 @@ export async function POST(req: NextRequest) {
 
     const resolvedBoardId: string = boardId ?? "global"
 
+    if (resolvedBoardId !== "global") {
+      try {
+        await assertBoardAccess({ userId: session.user.id, boardId: resolvedBoardId })
+      } catch (e) {
+        return toNextResponse(e)
+      }
+    }
+
     let result: unknown
 
     switch (action) {
@@ -34,11 +43,11 @@ export async function POST(req: NextRequest) {
           {
             role: "system",
             content:
-              "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze, professionelle WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze. Persönlich, aber nicht zu verkäuferisch.",
+              "You are a friendly assistant for an insurance broker. Write short, professional WhatsApp messages. Max 2 sentences. Personal but not pushy.",
           },
           {
             role: "user",
-            content: `Erstelle eine Begrüßung für ${name || "Kunde"}${context ? `. Kontext: ${context}` : ""}`,
+            content: `Create a greeting for ${name || "customer"}${context ? `. Context: ${context}` : ""}`,
           },
         ]
         const res = await aiRegistry.execute({ boardId: resolvedBoardId, purpose: "main", messages, maxTokens: 500 })
@@ -52,11 +61,11 @@ export async function POST(req: NextRequest) {
           {
             role: "system",
             content:
-              "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe eine kurze WhatsApp-Follow-up-Nachricht auf Deutsch. Maximal 2 Sätze. Nicht aufdringlich.",
+              "You are a friendly assistant for an insurance broker. Write a short WhatsApp follow-up message. Max 2 sentences. Not pushy.",
           },
           {
             role: "user",
-            content: `Follow-up für ${name || "Kunde"}. Letzter Kontakt: ${lastContact || "vor kurzem"}${context ? `. Kontext: ${context}` : ""}`,
+            content: `Follow-up for ${name || "customer"}. Last contact: ${lastContact || "recently"}${context ? `. Context: ${context}` : ""}`,
           },
         ]
         const res = await aiRegistry.execute({ boardId: resolvedBoardId, purpose: "main", messages, maxTokens: 500 })
@@ -72,8 +81,8 @@ export async function POST(req: NextRequest) {
         const messages: AIMessage[] = [
           {
             role: "system",
-            content: `Analysiere diesen Gesprächsverlauf und bewerte den Lead.
-Gib ein JSON zurück:
+            content: `Analyze this conversation and score the lead.
+Return JSON:
 {
   "score": 1-100,
   "readyToBuy": true/false,
@@ -88,7 +97,7 @@ Gib ein JSON zurück:
         try {
           result = JSON.parse(res.content)
         } catch {
-          result = { score: 50, readyToBuy: false, nextAction: "Manuell prüfen", summary: res.content }
+          result = { score: 50, readyToBuy: false, nextAction: "Check manually", summary: res.content }
         }
         break
       }

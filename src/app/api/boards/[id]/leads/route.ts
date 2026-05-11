@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 function jsonError(message: string, code: string, status: number) {
   return NextResponse.json({ error: true, message, code }, { status })
@@ -18,6 +19,7 @@ export async function POST(
   const session = await auth()
   if (!session?.user?.id) return jsonError("Please sign in.", "UNAUTHORIZED", 401)
 
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
   const membership = await prisma.boardMember.findFirst({
     where: { boardId: params.id, userId: session.user.id, role: { in: ["ADMIN", "AGENT"] } },
   })

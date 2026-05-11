@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { auth } from '@/auth'
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 function jsonError(message: string, code: string, status: number) {
   return NextResponse.json({ error: true, message, code }, { status })
@@ -16,11 +17,9 @@ export async function GET(
   }
 
   try {
-    const board = await prisma.board.findFirst({
-      where: {
-        id: params.id,
-        members: { some: { userId: session.user.id } },
-      },
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
+    const board = await prisma.board.findUnique({
+      where: { id: params.id },
       select: { name: true },
     })
 
@@ -62,6 +61,7 @@ export async function POST(
       return jsonError("Name is required.", "INVALID_INPUT", 400)
     }
 
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
     const membership = await prisma.boardMember.findFirst({
       where: {
         boardId: params.id,
@@ -133,6 +133,7 @@ export async function PUT(
       return jsonError("State ID is required.", "INVALID_INPUT", 400)
     }
 
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
     const membership = await prisma.boardMember.findFirst({
       where: {
         boardId: params.id,
@@ -199,6 +200,7 @@ export async function DELETE(
       return jsonError("State ID is required.", "INVALID_INPUT", 400)
     }
 
+    try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
     const membership = await prisma.boardMember.findFirst({
       where: {
         boardId: params.id,

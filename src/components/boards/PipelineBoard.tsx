@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import {
   DndContext,
   DragOverlay,
@@ -40,6 +41,7 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const router = useRouter()
 
   useEffect(() => {
     return () => { abortRef.current?.abort() }
@@ -155,12 +157,15 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
         body: JSON.stringify({ conversationId: leadId, targetStateId }),
       })
       if (!res.ok) throw new Error(`Update failed: ${res.status}`)
+      // Invalidiert Next.js Router-Cache → Dashboard-Stats sind beim nächsten Aufruf aktuell
+      router.refresh()
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return
       console.error("Drag update failed:", error)
-      onRefresh()
+      // Revert optimistic update by refreshing board state
+      setTimeout(() => onRefresh(), 500)
     }
-  }, [states, unassigned, onRefresh])
+  }, [states, unassigned, onRefresh, router])
 
   return (
     <div className="h-full w-full">
@@ -198,8 +203,8 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
 
         <DragOverlay>
           {activeLead ? (
-            <div className="rotate-2 opacity-90 w-72">
-              <div className="bg-white rounded-lg shadow-lg p-3 border border-gray-200 text-sm font-medium text-gray-900">
+            <div className="rotate-1 opacity-95 w-72 shadow-lg">
+              <div className="bg-card rounded-lg border border-primary/30 px-3 py-2 text-sm font-medium text-foreground">
                 {activeLead.name ?? activeLead.phone}
               </div>
             </div>

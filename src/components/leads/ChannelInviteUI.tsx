@@ -57,8 +57,8 @@ export default function ChannelInviteUI({ invite, channel }: ChannelInviteUIProp
 
   const meta = CHANNEL_META[channel] ?? {
     label: channel.charAt(0).toUpperCase() + channel.slice(1),
-    colorClass: "text-gray-600",
-    bgClass: "bg-gray-100",
+    colorClass: "text-muted-foreground",
+    bgClass: "bg-muted",
     icon: null,
   }
 
@@ -77,21 +77,21 @@ export default function ChannelInviteUI({ invite, channel }: ChannelInviteUIProp
           {meta.icon}
         </div>
         <div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">{meta.label}-Einladung</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm font-semibold text-foreground">{meta.label}-Einladung</p>
+          <p className="text-xs text-muted-foreground">
             {days > 0 ? `Gültig noch ${days} Tag${days !== 1 ? "e" : ""}` : "Abgelaufen"}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-        <code className="flex-1 text-xs text-gray-700 dark:text-gray-300 truncate">{invite.deepLink}</code>
+      <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
+        <code className="flex-1 text-xs text-foreground truncate">{invite.deepLink}</code>
         <button
           onClick={copyLink}
           className={`shrink-0 px-3 py-1.5 text-white text-xs rounded-lg flex items-center gap-1.5 transition-colors ${
             meta.colorClass === "text-[#2AABEE]" ? "bg-[#2AABEE] hover:bg-[#1a9cde]" :
             meta.colorClass === "text-green-600" ? "bg-green-600 hover:bg-green-700" :
-            "bg-blue-600 hover:bg-blue-700"
+            "bg-primary hover:bg-primary/90"
           }`}
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -101,17 +101,17 @@ export default function ChannelInviteUI({ invite, channel }: ChannelInviteUIProp
 
       <button
         onClick={() => setShowQr((v) => !v)}
-        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-center gap-2 text-sm text-gray-700 dark:text-gray-300 transition-colors"
+        className="w-full px-4 py-2 border border-border rounded-lg hover:bg-muted flex items-center justify-center gap-2 text-sm text-foreground transition-colors"
       >
         <QrCode className="w-4 h-4" />
         QR-Code {showQr ? "ausblenden" : "anzeigen"}
       </button>
 
       {showQr && (
-        <div className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex flex-col items-center gap-2">
+        <div className="p-4 bg-card border border-border rounded-lg flex flex-col items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={invite.qrUrl} alt={`${meta.label} invite QR`} className="w-40 h-40" />
-          <p className="text-xs text-gray-400">Per Kamera oder Screenshot teilen</p>
+          <p className="text-xs text-muted-foreground">Per Kamera oder Screenshot teilen</p>
         </div>
       )}
     </div>

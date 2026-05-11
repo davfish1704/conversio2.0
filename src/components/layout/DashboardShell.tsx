@@ -2,29 +2,44 @@
 
 import { type ReactNode } from "react"
 import SidebarNavigation from "./SidebarNavigation"
+import TopBar from "./TopBar"
+import CommandPalette from "./CommandPalette"
 import { SidebarProvider, useSidebar } from "@/lib/SidebarContext"
-import Footer from "@/components/layout/Footer"
+import { CommandPaletteProvider } from "@/lib/CommandPaletteContext"
 import EmailVerificationBanner from "@/components/ui/EmailVerificationBanner"
+import { cn } from "@/lib/utils"
 
 type User = { name?: string | null; email?: string | null; image?: string | null }
 
-function MainContent({ children, user, emailVerified }: { children: ReactNode; user: User; emailVerified: boolean }) {
+function MainContent({
+  children,
+  user,
+  emailVerified,
+}: {
+  children: ReactNode
+  user: User
+  emailVerified: boolean
+}) {
   const { collapsed } = useSidebar()
 
   return (
     <>
       <SidebarNavigation user={user} />
-      <main
-        className={`dark:text-gray-100 min-h-screen flex flex-col transition-[margin] duration-300 ${
-          collapsed ? "md:ml-16" : "md:ml-60"
-        }`}
+
+      <div
+        className={cn(
+          "flex flex-col min-h-screen transition-[margin] duration-200 ease-out",
+          collapsed ? "md:ml-14" : "md:ml-60"
+        )}
       >
+        <TopBar user={user} />
+
         {!emailVerified && <EmailVerificationBanner />}
-        <div className="flex-1">
+
+        <main className="flex-1 bg-background">
           {children}
-        </div>
-        <Footer />
-      </main>
+        </main>
+      </div>
     </>
   )
 }
@@ -39,10 +54,15 @@ export default function DashboardShell({
   emailVerified?: boolean
 }) {
   return (
-    <SidebarProvider>
-      <div className="min-h-screen bg-gray-50 dark:bg-[#0A0A0A] transition-colors">
-        <MainContent user={user} emailVerified={emailVerified}>{children}</MainContent>
-      </div>
-    </SidebarProvider>
+    <CommandPaletteProvider>
+      <SidebarProvider>
+        <div className="min-h-screen bg-background">
+          <MainContent user={user} emailVerified={emailVerified}>
+            {children}
+          </MainContent>
+          <CommandPalette />
+        </div>
+      </SidebarProvider>
+    </CommandPaletteProvider>
   )
 }

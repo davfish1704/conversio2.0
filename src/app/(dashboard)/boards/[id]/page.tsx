@@ -34,6 +34,7 @@ export default function BoardPipelinePage() {
   const [unassignedLeads, setUnassignedLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -47,6 +48,7 @@ export default function BoardPipelinePage() {
     abortRef.current = controller
     setLoading(true)
     setNotFound(false)
+    setFetchError(null)
     try {
       const [boardRes, pipelineRes] = await Promise.all([
         fetch(`/api/boards/${id}`, { signal: controller.signal }),
@@ -60,14 +62,16 @@ export default function BoardPipelinePage() {
         }
         return
       }
-      if (!boardRes.ok || !pipelineRes.ok) throw new Error("Fetch failed")
+      if (!boardRes.ok || !pipelineRes.ok) throw new Error("Failed to fetch board data")
       const boardData = await boardRes.json()
       const pipelineData = await pipelineRes.json()
       setBoard(boardData.board || boardData)
       setPipelineStates(pipelineData.states || [])
       setUnassignedLeads(pipelineData.unassignedLeads || [])
     } catch (err) {
-      if ((err as Error).name !== "AbortError") console.error("Fetch error:", err)
+      if ((err as Error).name === "AbortError") return
+      setFetchError(err instanceof Error ? err.message : "Connection error")
+      console.error("Fetch error:", err)
     } finally {
       setLoading(false)
     }
@@ -77,51 +81,66 @@ export default function BoardPipelinePage() {
     fetchAll()
   }, [fetchAll])
 
-  if (loading || (!board && !notFound)) return <BoardSkeleton />
-  if (notFound || !board) return <div className="p-8 text-center text-gray-500">{t("board.notFound")}</div>
+  if (loading || (!board && !notFound && !fetchError)) return <BoardSkeleton />
+  if (fetchError) return (
+    <div>
+      <BoardTabs board={{ id, name: "", description: null, isActive: true }} />
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <p className="text-sm text-destructive font-medium">Verbindungsfehler</p>
+        <p className="text-xs text-muted-foreground">{fetchError}</p>
+        <button onClick={fetchAll} className="text-xs text-primary hover:underline">Erneut laden</button>
+      </div>
+    </div>
+  )
+  if (notFound || !board) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-sm text-muted-foreground">{t("board.notFound")}</p>
+    </div>
+  )
+
+  const totalLeads = pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+    <div className="h-[calc(100vh-48px)] flex flex-col bg-background">
       <BoardTabs board={board} />
 
-      {/* Full-Width Pipeline Content */}
-      <div className="flex-1 px-4 py-3 overflow-hidden flex flex-col min-h-0">
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("crm.pipeline")}</h2>
-            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
-              {pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length} {t("common.leads")}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition"
-            >
-              {t("common.import")}
-            </button>
-            <button
-              disabled
-              title="Add lead manually – coming soon"
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg opacity-50 cursor-not-allowed"
-            >
-              + {t("common.addLead")}
-            </button>
-          </div>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b border-border shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Pipeline</span>
+          <span className="text-xs tabular-nums text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+            {totalLeads} {t("common.leads")}
+          </span>
         </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-md hover:bg-primary/15 transition-colors"
+          >
+            {t("common.import")}
+          </button>
+          <button
+            disabled
+            title="Leads manuell hinzufügen — demnächst verfügbar"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-foreground bg-primary rounded-md opacity-40 cursor-not-allowed"
+          >
+            + {t("common.addLead")}
+          </button>
+        </div>
+      </div>
 
-        <div className="flex-1 overflow-hidden min-h-0">
-          {pipelineStates.length === 0 && unassignedLeads.length === 0 ? (
-            <EmptyStateCard boardId={id} onImportClick={() => setShowImportModal(true)} />
-          ) : (
-            <PipelineBoard
-              states={pipelineStates}
-              boardId={id}
-              unassignedLeads={unassignedLeads}
-              onRefresh={fetchAll}
-            />
-          )}
-        </div>
+      {/* Board content */}
+      <div className="flex-1 overflow-hidden min-h-0 p-4 sm:p-5">
+        {pipelineStates.length === 0 && unassignedLeads.length === 0 ? (
+          <EmptyStateCard boardId={id} onImportClick={() => setShowImportModal(true)} />
+        ) : (
+          <PipelineBoard
+            states={pipelineStates}
+            boardId={id}
+            unassignedLeads={unassignedLeads}
+            onRefresh={fetchAll}
+          />
+        )}
       </div>
 
       <LeadImportModal

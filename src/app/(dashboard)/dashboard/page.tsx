@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState, useContext } from "react"
+import { Suspense, useEffect, useState, useContext, useMemo } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -8,11 +8,22 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, Legend,
 } from "recharts"
 import {
-  LayoutDashboard, Plus, TrendingUp, BarChart3, PieChart as PieIcon,
-  ArrowLeft, Kanban, Users, ChevronRight
+  Plus, TrendingUp, BarChart3, PieChart as PieIcon,
+  ArrowLeft, Kanban, Users, Layers,
 } from "lucide-react"
 import { useTheme } from "@/lib/ThemeContext"
 import { LanguageContext } from "@/lib/LanguageContext"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+import { cn } from "@/lib/utils"
+
+/* ─── Types ──────────────────────────────────────────────── */
 
 interface Board {
   id: string
@@ -32,18 +43,172 @@ interface BoardStats {
   newThisWeek: number
 }
 
-const CHANNEL_COLORS = {
-  WhatsApp: "#10B981", Facebook: "#3B82F6", Manual: "#9CA3AF", unknown: "#D1D5DB",
+/* ─── Constants ──────────────────────────────────────────── */
+
+const CHANNEL_COLORS: Record<string, string> = {
+  WhatsApp: "#22c55e",
+  Facebook: "#4F83F7",
+  Manuell:  "#94a3b8",
+  unknown:  "#cbd5e1",
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  Active: "#10B981", Frozen: "#EF4444", CLOSED: "#6B7280", ARCHIVED: "#F59E0B",
+  Aktiv:    "#22c55e",
+  Pausiert: "#ef4444",
+  CLOSED:   "#94a3b8",
+  ARCHIVED: "#f59e0b",
 }
 
 function formatShortDate(dateStr: string) {
   const d = new Date(dateStr)
-  return `${d.getDate()}.${d.getMonth() + 1}`
+  return `${d.getDate()}.${d.getMonth() + 1}.`
 }
+
+/* ─── Sub-components ─────────────────────────────────────── */
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  subGreen,
+}: {
+  icon: React.ElementType
+  label: string
+  value: string | number
+  sub?: string
+  subGreen?: boolean
+}) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground mb-1">{label}</p>
+            <p className="text-2xl font-semibold tabular-nums">{value}</p>
+            {sub && (
+              <p className={cn("text-xs mt-1.5", subGreen ? "text-success" : "text-muted-foreground")}>
+                {sub}
+              </p>
+            )}
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-primary" strokeWidth={1.75} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ChartCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center">
+            <Icon className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.75} />
+          </div>
+          <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {title}
+          </CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
+
+function BoardCard({ board }: { board: Board }) {
+  return (
+    <Link href={`/dashboard?board=${board.id}`} className="group block">
+      <Card className="h-full hover:border-primary/20 hover:shadow-md transition-all duration-150 cursor-pointer">
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold group-hover:text-primary transition-colors truncate">
+                {board.name}
+              </p>
+              {board.description && (
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                  {board.description}
+                </p>
+              )}
+            </div>
+            <Badge variant={board.isActive ? "success" : "muted"} className="shrink-0 mt-0.5">
+              {board.isActive ? "Aktiv" : "Inaktiv"}
+            </Badge>
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-border">
+            {[
+              { label: "Phasen", value: board._count?.states ?? 0 },
+              { label: "Leads",  value: board._count?.conversations ?? 0 },
+              { label: "Team",   value: board._count?.members ?? 0 },
+            ].map((s) => (
+              <div key={s.label} className="text-center px-3 first:pl-0 last:pr-0">
+                <p className="text-[11px] text-muted-foreground mb-1">{s.label}</p>
+                <p className="text-lg font-semibold tabular-nums">{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  )
+}
+
+function BoardListSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[1, 2, 3].map((i) => (
+        <Card key={i}>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2 flex-1">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+              <Skeleton className="h-5 w-12 rounded-md" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[1, 2, 3].map((j) => <Skeleton key={j} className="h-10 rounded-md" />)}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function StatsSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-7 w-14" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-8 w-8 rounded-lg" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Card><CardContent className="p-5"><Skeleton className="h-[240px]" /></CardContent></Card>
+        <Card><CardContent className="p-5"><Skeleton className="h-[240px]" /></CardContent></Card>
+      </div>
+      <Card><CardContent className="p-5"><Skeleton className="h-[200px]" /></CardContent></Card>
+    </>
+  )
+}
+
+/* ─── Main ───────────────────────────────────────────────── */
 
 function DashboardContent() {
   const router = useRouter()
@@ -51,38 +216,38 @@ function DashboardContent() {
   const boardId = searchParams.get("board")
   const { t } = useContext(LanguageContext)
   const { theme } = useTheme()
-  const tooltipStyle = theme === "dark"
-    ? { borderRadius: "8px", border: "1px solid #374151", backgroundColor: "#1f2937", color: "#f9fafb", fontSize: "12px" }
-    : { borderRadius: "8px", border: "1px solid #E5E7EB", fontSize: "12px" }
 
-  const [boards, setBoards] = useState<Board[]>([])
-  const [boardStats, setBoardStats] = useState<BoardStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const chartCfg = useMemo(() => ({
+    grid:    theme === "dark" ? "#1e2430" : "#f0f1f4",
+    axis:    theme === "dark" ? "#4a5266" : "#b0b7c5",
+    tooltip: theme === "dark"
+      ? { borderRadius: "8px", border: "1px solid #1e2430", backgroundColor: "#0e1117", color: "#f0f2f5", fontSize: "12px", padding: "10px 14px" }
+      : { borderRadius: "8px", border: "1px solid #e8eaed", backgroundColor: "#fff", fontSize: "12px", padding: "10px 14px" },
+  }), [theme])
+
+  const [boards, setBoards]           = useState<Board[]>([])
+  const [boardStats, setBoardStats]   = useState<BoardStats | null>(null)
+  const [loading, setLoading]         = useState(true)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newBoardName, setNewBoardName] = useState("")
   const [newBoardDesc, setNewBoardDesc] = useState("")
-  const [formError, setFormError] = useState("")
+  const [formError, setFormError]     = useState("")
   const [formLoading, setFormLoading] = useState(false)
+  const [boardsError, setBoardsError] = useState<string | null>(null)
 
-  const selectedBoard = boards.find(b => b.id === boardId) || null
+  const selectedBoard = boards.find((b) => b.id === boardId) ?? null
 
-  // Load all boards
   useEffect(() => {
     fetch("/api/boards")
-      .then((r) => r.json())
-      .then((data) => {
-        setBoards(data.boards || [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+      .then((r) => { if (!r.ok) throw new Error("Failed to load boards"); return r.json() })
+      .then((data) => { setBoards(data.boards || []); setBoardsError(null); setLoading(false) })
+      .catch((err) => { setBoardsError(err.message); setLoading(false) })
   }, [])
 
-  // Load board-specific stats when board selected
   useEffect(() => {
-    if (!selectedBoard) {
-      setBoardStats(null)
-      return
-    }
+    if (!selectedBoard) { setBoardStats(null); return }
+    setStatsLoading(true)
     fetch(`/api/boards/${selectedBoard.id}/pipeline`)
       .then((r) => r.json())
       .then((data) => {
@@ -90,367 +255,285 @@ function DashboardContent() {
           ...(data.states || []).flatMap((s: any) => s.leads || []),
           ...(data.unassignedLeads || []),
         ]
-
-        const thirtyDaysAgo = new Date()
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
         const dailyMap = new Map<string, number>()
         for (let i = 29; i >= 0; i--) {
-          const d = new Date()
-          d.setDate(d.getDate() - i)
+          const d = new Date(); d.setDate(d.getDate() - i)
           dailyMap.set(d.toISOString().split("T")[0], 0)
         }
-
         allLeads.forEach((c) => {
           if (!c.createdAt) return
           const day = new Date(c.createdAt).toISOString().split("T")[0]
-          if (dailyMap.has(day)) {
-            dailyMap.set(day, (dailyMap.get(day) || 0) + 1)
-          }
+          if (dailyMap.has(day)) dailyMap.set(day, (dailyMap.get(day) || 0) + 1)
         })
-
         const channelMap = new Map<string, number>()
         allLeads.forEach((c) => {
-          const source = c.source || "unknown"
-          channelMap.set(source, (channelMap.get(source) || 0) + 1)
+          const src = c.source || "unknown"
+          channelMap.set(src, (channelMap.get(src) || 0) + 1)
         })
-
-        // Status map - using aiEnabled/frozen instead of old status field
-        const statusMap = new Map<string, number>()
-        const activeCount = allLeads.filter((c) => c.aiEnabled !== false && c.frozen !== true).length
-        const frozenCount = allLeads.filter((c) => c.frozen === true).length
-        statusMap.set("Active", activeCount)
-        if (frozenCount > 0) statusMap.set("Frozen", frozenCount)
-
-        const sevenDaysAgo = new Date()
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const activeCount  = allLeads.filter((c) => c.aiEnabled !== false && c.frozen !== true).length
+        const frozenCount  = allLeads.filter((c) => c.frozen === true).length
+        const statusMap    = new Map([["Aktiv", activeCount]])
+        if (frozenCount > 0) statusMap.set("Pausiert", frozenCount)
 
         setBoardStats({
           daily: Array.from(dailyMap.entries()).map(([date, count]) => ({ date, count })),
           channel: Array.from(channelMap.entries()).map(([name, value]) => ({
-            name: name === "whatsapp" ? "WhatsApp" : name === "facebook" ? "Facebook" : name === "manual" ? "Manual" : name,
+            name: name === "whatsapp" ? "WhatsApp" : name === "facebook" ? "Facebook" : name === "manual" ? "Manuell" : name,
             value,
           })),
           status: Array.from(statusMap.entries()).map(([name, value]) => ({ name, value })),
           totalLeads: allLeads.length,
-          activeLeads: allLeads.filter((c) => c.aiEnabled !== false && c.frozen !== true).length,
+          activeLeads: activeCount,
           newThisWeek: allLeads.filter((c) => c.createdAt && new Date(c.createdAt) >= sevenDaysAgo).length,
         })
       })
       .catch(console.error)
+      .finally(() => setStatsLoading(false))
   }, [selectedBoard?.id])
 
   const createBoard = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError("")
     setFormLoading(true)
-    const res = await fetch("/api/boards", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newBoardName, description: newBoardDesc }),
-    })
-    setFormLoading(false)
-    if (res.ok) {
-      const data = await res.json()
-      setBoards((prev) => [...prev, data.board])
-      setIsModalOpen(false)
-      setNewBoardName("")
-      setNewBoardDesc("")
-    } else {
-      const data = await res.json().catch(() => ({}))
-      setFormError(data.error || t('dashboard.boardCreateError'))
+    try {
+      const res = await fetch("/api/boards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newBoardName, description: newBoardDesc }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setBoards((prev) => [...prev, data.board])
+        setIsModalOpen(false)
+        setNewBoardName("")
+        setNewBoardDesc("")
+      } else {
+        const d = await res.json().catch(() => ({}))
+        setFormError(d.error || t("dashboard.boardCreateError") || "Board konnte nicht erstellt werden.")
+      }
+    } finally {
+      setFormLoading(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    )
   }
 
   const activeBoards = boards.filter((b) => b.isActive)
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            {selectedBoard && (
-              <button
-                onClick={() => router.push("/dashboard")}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <LayoutDashboard className="w-6 h-6" />
-                {selectedBoard ? selectedBoard.name : t("nav.dashboard") || "Dashboard"}
-              </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {selectedBoard
-                  ? `${boardStats?.totalLeads || 0} ${t("common.leads")} · ${boardStats?.activeLeads || 0} ${t("common.active")}`
-                  : `${boards.length} Boards · ${activeBoards.length} ${t("common.active")}`
-                }
-              </p>
-            </div>
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3 min-w-0">
+          {selectedBoard && (
+            <Button variant="ghost" size="icon-sm" onClick={() => router.push("/dashboard")} aria-label="Zurück">
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold truncate">
+              {selectedBoard ? selectedBoard.name : "Dashboard"}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {selectedBoard
+                ? `${boardStats?.totalLeads ?? 0} Leads · ${boardStats?.activeLeads ?? 0} aktiv`
+                : `${boards.length} Board${boards.length !== 1 ? "s" : ""} · ${activeBoards.length} aktiv`}
+            </p>
           </div>
-          {selectedBoard ? (
-            <Link
-              href={`/boards/${selectedBoard.id}`}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Kanban className="w-4 h-4" />
-              {t("nav.pipeline")}
-            </Link>
-          ) : (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              {t("dashboard.newBoard")}
-            </button>
+          {selectedBoard && (
+            <Badge variant={selectedBoard.isActive ? "success" : "muted"} className="shrink-0">
+              {selectedBoard.isActive ? "Aktiv" : "Inaktiv"}
+            </Badge>
           )}
         </div>
 
-        {/* Board List OR Board Stats */}
-        {!selectedBoard ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {boards.map((board) => (
-              <Link
-                key={board.id}
-                href={`/dashboard?board=${board.id}`}
-                className="block p-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{board.name}</h3>
-                  <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
-                      board.isActive
-                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                    }`}
-                  >
-                    {board.isActive ? t("common.active") : t("common.inactive")}
-                  </span>
-                </div>
-                {board.description && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{board.description}</p>
-                )}
-                <div className="grid grid-cols-3 gap-4 text-center pt-4 border-t border-gray-100 dark:border-gray-800">
-                  <div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("flowBuilder.states")}</div>
-                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {board._count?.states || 0}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{t("common.leads")}</div>
-                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {board._count?.conversations || 0}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      <Users className="w-4 h-4 mx-auto" />
-                    </div>
-                    <div className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {board._count?.members || 0}
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
+        {selectedBoard ? (
+          <Button size="sm" asChild>
+            <Link href={`/boards/${selectedBoard.id}`}>
+              <Kanban className="w-4 h-4" />
+              Pipeline öffnen
+            </Link>
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => setIsModalOpen(true)}>
+            <Plus className="w-4 h-4" />
+            Neues Board
+          </Button>
+        )}
+      </div>
+
+      {/* ── Board list ──────────────────────────────────────── */}
+      {!selectedBoard && (
+        loading ? (
+          <BoardListSkeleton />
+        ) : boardsError ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center mb-4">
+              <Kanban className="w-5 h-5 text-destructive" strokeWidth={1.5} />
+            </div>
+            <p className="text-sm font-medium text-destructive">Verbindungsfehler</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-5">
+              Boards konnten nicht geladen werden. Bitte versuchen Sie es erneut.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => { setLoading(true); setBoardsError(null); fetch("/api/boards").then(r => r.json()).then(d => { setBoards(d.boards || []); setLoading(false) }).catch(e => { setBoardsError(e.message); setLoading(false) }) }}>
+              Erneut laden
+            </Button>
           </div>
+        ) : boards.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center mb-4">
+              <Kanban className="w-5 h-5 text-muted-foreground" strokeWidth={1.5} />
+            </div>
+            <p className="text-sm font-medium">Noch kein Board</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-5">
+              Erstellen Sie Ihr erstes Board um Leads zu verwalten.
+            </p>
+            <Button size="sm" onClick={() => setIsModalOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Neues Board erstellen
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {boards.map((b) => <BoardCard key={b.id} board={b} />)}
+          </div>
+        )
+      )}
+
+      {/* ── Board stats ─────────────────────────────────────── */}
+      {selectedBoard && (
+        statsLoading ? (
+          <StatsSkeleton />
         ) : boardStats ? (
           <>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-3 mb-2">
-                  <BarChart3 className="w-5 h-5 text-blue-600" />
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{t("dashboard.totalLeads")}</p>
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{boardStats.totalLeads}</p>
-                <p className="text-sm text-green-600 dark:text-green-400 mt-2">
-                  <TrendingUp className="w-4 h-4 inline mr-1" />
-                  +{boardStats.newThisWeek} {t("dashboard.thisWeek")}
-                </p>
-              </div>
-
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("common.active")}</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{boardStats.activeLeads}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  {boardStats.totalLeads > 0
-                    ? `${Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100)}% ${t("dashboard.ofTotal")}`
-                    : "0% of total"}
-                </p>
-              </div>
-
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("flowBuilder.states")}</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.states || 0}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.pipelineStages")}</p>
-              </div>
-
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{t("nav.team")}</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">{selectedBoard?._count?.members || 0}</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("dashboard.teamMembers")}</p>
-              </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <StatCard icon={BarChart3} label="Leads gesamt" value={boardStats.totalLeads}
+                sub={`+${boardStats.newThisWeek} diese Woche`} subGreen={boardStats.newThisWeek > 0} />
+              <StatCard icon={TrendingUp} label="Aktiv" value={boardStats.activeLeads}
+                sub={boardStats.totalLeads > 0
+                  ? `${Math.round((boardStats.activeLeads / boardStats.totalLeads) * 100)}% vom Gesamt`
+                  : "0%"} />
+              <StatCard icon={Layers} label="Phasen" value={selectedBoard._count?.states ?? 0} sub="Pipeline-Phasen" />
+              <StatCard icon={Users}   label="Team"   value={selectedBoard._count?.members ?? 0} sub="Teammitglieder" />
             </div>
 
-            {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* Lead Volume Chart */}
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-4">
-                  <BarChart3 className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.leadVolume")}</h3>
-                </div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={boardStats.daily}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+              <ChartCard icon={BarChart3} title="Lead-Volumen (30 Tage)">
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={boardStats.daily} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                     <defs>
-                      <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                      <linearGradient id="gradLeads" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#4F83F7" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="#4F83F7" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#374151" : "#E5E7EB"} />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={formatShortDate}
-                      stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"}
-                      style={{ fontSize: "12px" }}
-                    />
-                    <YAxis stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Area type="monotone" dataKey="count" stroke="#3B82F6" fillOpacity={1} fill="url(#colorLeads)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartCfg.grid} vertical={false} />
+                    <XAxis dataKey="date" tickFormatter={formatShortDate} stroke={chartCfg.axis}
+                      tick={{ fontSize: 11 }} axisLine={false} tickLine={false} interval={6} />
+                    <YAxis stroke={chartCfg.axis} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={chartCfg.tooltip} />
+                    <Area type="monotone" dataKey="count" name="Leads" stroke="#4F83F7"
+                      strokeWidth={1.5} fillOpacity={1} fill="url(#gradLeads)" dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartCard>
 
-              {/* By Channel Chart */}
-              <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-4">
-                  <PieIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                  <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.byChannel")}</h3>
-                </div>
-                <ResponsiveContainer width="100%" height={200}>
+              <ChartCard icon={PieIcon} title="Nach Kanal">
+                <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
-                    <Pie
-                      data={boardStats.channel}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {boardStats.channel.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={CHANNEL_COLORS[entry.name as keyof typeof CHANNEL_COLORS] || CHANNEL_COLORS.unknown}
-                        />
+                    <Pie data={boardStats.channel} cx="50%" cy="50%"
+                      innerRadius={58} outerRadius={82} paddingAngle={3} dataKey="value">
+                      {boardStats.channel.map((entry, i) => (
+                        <Cell key={i} fill={CHANNEL_COLORS[entry.name] ?? CHANNEL_COLORS.unknown} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Legend wrapperStyle={{ fontSize: "12px" }} />
+                    <Tooltip contentStyle={chartCfg.tooltip} />
+                    <Legend wrapperStyle={{ fontSize: "11px" }}
+                      formatter={(v) => <span style={{ color: theme === "dark" ? "#94a3b8" : "#64748b" }}>{v}</span>} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartCard>
             </div>
 
-            {/* Status Overview */}
-            <div className="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart3 className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                <h3 className="font-semibold text-gray-900 dark:text-white">{t("dashboard.statusOverview")}</h3>
-              </div>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={boardStats.status}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#374151" : "#E5E7EB"} />
-                  <XAxis dataKey="name" stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
-                  <YAxis stroke={theme === "dark" ? "#9CA3AF" : "#6B7280"} style={{ fontSize: "12px" }} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                    {boardStats.status.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || "#9CA3AF"} />
+            <ChartCard icon={BarChart3} title="Status-Übersicht">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={boardStats.status} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartCfg.grid} vertical={false} />
+                  <XAxis dataKey="name" stroke={chartCfg.axis} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis stroke={chartCfg.axis} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={chartCfg.tooltip} />
+                  <Bar dataKey="value" name="Leads" radius={[4, 4, 0, 0]} maxBarSize={56}>
+                    {boardStats.status.map((entry, i) => (
+                      <Cell key={i} fill={STATUS_COLORS[entry.name] ?? "#94a3b8"} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </ChartCard>
           </>
-        ) : null}
-      </div>
-
-      {/* Create Board Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">{t("dashboard.createBoardTitle")}</h2>
-            <form onSubmit={createBoard}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t("common.name")}
-                </label>
-                <input
-                  type="text"
-                  value={newBoardName}
-                  onChange={(e) => setNewBoardName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                  required
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t("dashboard.boardDescription")}
-                </label>
-                <textarea
-                  value={newBoardDesc}
-                  onChange={(e) => setNewBoardDesc(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                  rows={3}
-                />
-              </div>
-              {formError && <p className="text-sm text-red-600 mb-4">{formError}</p>}
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false)
-                    setFormError("")
-                  }}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={formLoading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {formLoading ? t("dashboard.creating") : t("dashboard.create")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        ) : null
       )}
+
+      {/* ── Create board dialog ──────────────────────────────── */}
+      <Dialog open={isModalOpen} onOpenChange={(o) => { setIsModalOpen(o); if (!o) setFormError("") }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Neues Board erstellen</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={createBoard} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="board-name">Name</Label>
+              <Input id="board-name" value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                placeholder="z. B. Kfz-Leads Q3" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="board-desc">
+                Beschreibung{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Textarea id="board-desc" value={newBoardDesc}
+                onChange={(e) => setNewBoardDesc(e.target.value)}
+                placeholder="Kurze Beschreibung des Boards…" rows={3} className="resize-none" />
+            </div>
+            {formError && (
+              <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-md">
+                {formError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" size="sm"
+                onClick={() => { setIsModalOpen(false); setFormError("") }}>
+                Abbrechen
+              </Button>
+              <Button type="submit" size="sm" disabled={formLoading || !newBoardName.trim()}>
+                {formLoading ? "Wird erstellt…" : "Board erstellen"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
+/* ─── Export ─────────────────────────────────────────────── */
+
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+    <Suspense
+      fallback={
+        <div className="p-6 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+            <Skeleton className="h-8 w-32 rounded-md" />
+          </div>
+          <BoardListSkeleton />
+        </div>
+      }
+    >
       <DashboardContent />
     </Suspense>
   )

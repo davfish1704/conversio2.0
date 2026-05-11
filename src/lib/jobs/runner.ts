@@ -1,10 +1,26 @@
 import { prisma } from "@/lib/db"
 import type { JobType, JobPayload } from "./enqueue"
 
+const conversationLocks = new Map<string, Promise<void>>()
+
+async function acquireConversationLock(
+  conversationId: string | undefined,
+  fn: () => Promise<void>,
+): Promise<void> {
+  if (!conversationId) {
+    await fn()
+    return
+  }
+
+  const prev = conversationLocks.get(conversationId) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  conversationLocks.set(conversationId, next)
+  await next
+}
+
 export async function processNextBatch(limit = 10): Promise<number> {
   const now = new Date()
 
-  // Atomically claim pending jobs with SELECT FOR UPDATE SKIP LOCKED
   const claimed = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "jobs"
     SET status = 'RUNNING'::"JobStatus", "startedAt" = NOW(), attempts = attempts + 1
@@ -39,7 +55,6 @@ export async function processNextBatch(limit = 10): Promise<number> {
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const willRetry = job.attempts < job.maxAttempts
-        // Exponential backoff: 2^attempts × 60 seconds
         const backoffMs = 60 * 1000 * Math.pow(2, job.attempts)
 
         await prisma.job.update({
@@ -52,35 +67,42 @@ export async function processNextBatch(limit = 10): Promise<number> {
         })
 
         if (!willRetry) {
-          // Dead Letter Queue: persist exhausted job for inspection
-          prisma.failedJob.create({
-            data: {
-              jobId: id,
-              type: job.type,
-              payload: job.payload as Parameters<typeof prisma.failedJob.create>[0]["data"]["payload"],
-              lastError: errorMsg.slice(0, 500),
-              attempts: job.attempts,
-              boardId: job.boardId ?? null,
-              leadId: job.leadId ?? null,
-            },
-          }).catch(() => {})
-
-          // Admin notification (fire-and-forget)
-          import("@/lib/notifications/admin-notify").then(({ notifyAdmin }) =>
-            notifyAdmin({
-              type: "FAILED_JOB",
-              title: `Job fehlgeschlagen: ${job.type}`,
-              body: `Job ${id} nach ${job.attempts} Versuchen endgültig gescheitert: ${errorMsg.slice(0, 200)}`,
-              jobId: id,
-              boardId: job.boardId ?? undefined,
-              leadId: job.leadId ?? undefined,
+          prisma.failedJob
+            .create({
+              data: {
+                jobId: id,
+                type: job.type,
+                payload: job.payload as Parameters<
+                  typeof prisma.failedJob.create
+                >[0]["data"]["payload"],
+                lastError: errorMsg.slice(0, 500),
+                attempts: job.attempts,
+                boardId: job.boardId ?? null,
+                leadId: job.leadId ?? null,
+              },
             })
-          ).catch(() => {})
+            .catch(() => {})
+
+          import("@/lib/notifications/admin-notify")
+            .then(({ notifyAdmin }) =>
+              notifyAdmin({
+                type: "FAILED_JOB",
+                title: `Job failed: ${job.type}`,
+                body: `Job ${id} failed after ${job.attempts} attempts: ${errorMsg.slice(0, 200)}`,
+                jobId: id,
+                boardId: job.boardId ?? undefined,
+                leadId: job.leadId ?? undefined,
+              }),
+            )
+            .catch(() => {})
         }
 
-        console.error(`[JobRunner] job=${id} type=${job.type} attempt=${job.attempts} willRetry=${willRetry} error:`, errorMsg)
+        console.error(
+          `[JobRunner] job=${id} type=${job.type} attempt=${job.attempts} willRetry=${willRetry} error:`,
+          errorMsg,
+        )
       }
-    })
+    }),
   )
 
   return processed
@@ -89,9 +111,14 @@ export async function processNextBatch(limit = 10): Promise<number> {
 async function executeJob(type: JobType, payload: JobPayload): Promise<void> {
   switch (type) {
     case "process_message": {
-      if (!payload.conversationId) throw new Error("Missing conversationId")
-      const { executeStateForConversation } = await import("@/lib/state-machine/executor")
-      await executeStateForConversation(payload.conversationId, payload.userMessage ?? "")
+      const convId = payload.conversationId
+      if (!convId) throw new Error("Missing conversationId")
+      await acquireConversationLock(convId, async () => {
+        const { executeStateForConversation } = await import(
+          "@/lib/state-machine/executor"
+        )
+        await executeStateForConversation(convId, payload.userMessage ?? "")
+      })
       break
     }
     case "escalation_check": {
@@ -120,7 +147,6 @@ async function handleEscalationCheck(conversationId: string): Promise<void> {
   const state = conversation.currentState
   if (!state) return
 
-  // If lead replied after the last AI outbound, no escalation needed
   const lastInbound = await prisma.message.findFirst({
     where: { conversationId, direction: "INBOUND" },
     orderBy: { timestamp: "desc" },
@@ -138,7 +164,7 @@ async function handleEscalationCheck(conversationId: string): Promise<void> {
     conversation.boardId,
     conversationId,
     "no_reply",
-    `Kein Reply seit ${(state as { escalateOnNoReply?: number }).escalateOnNoReply ?? "N/A"}h.`
+    `No reply since ${(state as { escalateOnNoReply?: number }).escalateOnNoReply ?? "N/A"}h.`,
   )
 
   const newFollowupCount = (conversation.followupCount ?? 0) + 1
@@ -149,17 +175,24 @@ async function handleEscalationCheck(conversationId: string): Promise<void> {
     if (followupAction === "escalate") {
       await prisma.conversation.update({
         where: { id: conversationId },
-        data: { frozen: true, frozenReason: "followup_limit_reached", followupCount: newFollowupCount },
+        data: {
+          frozen: true,
+          frozenReason: "followup_limit_reached",
+          followupCount: newFollowupCount,
+        },
       })
     } else if (followupAction === "advance_to_state") {
-      const targetStateId = (state as { followupTargetState?: string | null }).followupTargetState
+      const targetStateId = (state as { followupTargetState?: string | null })
+        .followupTargetState
       if (targetStateId) {
         const { transitionState } = await import("@/lib/state-machine")
-        await transitionState(conversationId, targetStateId)
+        await transitionState(conversationId, targetStateId, "ai_advance")
       }
-      await prisma.conversation.update({ where: { id: conversationId }, data: { followupCount: newFollowupCount } })
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { followupCount: newFollowupCount },
+      })
     } else {
-      // drop
       await prisma.conversation.update({
         where: { id: conversationId },
         data: { status: "ARCHIVED", followupCount: newFollowupCount },

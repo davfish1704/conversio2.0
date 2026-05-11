@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { runAgentLoop, type AgentLoopContext } from "@/lib/ai/tool-engine"
-import { assertBoardMemberAccess } from "@/lib/auth-helpers"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function POST(
   req: NextRequest,
@@ -11,8 +11,7 @@ export async function POST(
   const session = await auth()
   if (!session?.user?.id) return new NextResponse("Unauthorized", { status: 401 })
 
-  const denied = await assertBoardMemberAccess(params.id, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const body = await req.json()
   const { message, state, mission } = body
@@ -32,7 +31,7 @@ export async function POST(
     stylePrompt: "",
     infoPrompt: "",
     rulePrompt: "",
-    defaultModel: "dummy",
+    defaultModel: "gpt-4o-mini",
     temperature: 0.7,
     maxTokens: 500,
     language: "en",

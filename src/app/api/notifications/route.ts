@@ -6,9 +6,12 @@ export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  // v3: AdminNotification → AdminReport (status OPEN = unresolved)
+  // v3: AdminNotification → AdminReport (status OPEN = unresolved), scoped by board membership
   const notifications = await (prisma as any).adminReport.findMany({
-    where: { status: "OPEN" },
+    where: {
+      status: "OPEN",
+      board: { members: { some: { userId: session.user.id } } },
+    },
     orderBy: { createdAt: "desc" },
     take: 50,
   })

@@ -4,6 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useContext, useEffect } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 interface Board {
   id: string
@@ -12,11 +14,7 @@ interface Board {
   isActive: boolean
 }
 
-interface BoardTabsProps {
-  board: Board
-}
-
-export default function BoardTabs({ board }: BoardTabsProps) {
+export default function BoardTabs({ board }: { board: Board }) {
   const { t } = useContext(LanguageContext)
   const pathname = usePathname()
   const { id } = board
@@ -26,59 +24,45 @@ export default function BoardTabs({ board }: BoardTabsProps) {
   }, [id])
 
   const tabs = [
-    { key: "pipeline", label: t("nav.pipeline") || "Pipeline", href: `/boards/${id}` },
-    { key: "brain", label: "BrainLab", href: `/boards/${id}/brain` },
-    { key: "flow", label: t("nav.flowBuilder") || "Flow Builder", href: `/boards/${id}/flow` },
-    { key: "assets", label: t("assets.title") || "Assets", href: `/boards/${id}/assets` },
-    { key: "usage", label: "Usage", href: `/boards/${id}/usage` },
-    { key: "settings", label: t("nav.settings") || "Settings", href: `/boards/${id}/settings` },
+    { key: "pipeline", label: t("boardTabs.pipeline"), href: `/boards/${id}` },
+    { key: "brain",    label: t("boardTabs.brainLab"),  href: `/boards/${id}/brain` },
+    { key: "flow",     label: t("boardTabs.flowBuilder"), href: `/boards/${id}/flow` },
+    { key: "assets",   label: t("boardTabs.assets"), href: `/boards/${id}/assets` },
+    { key: "usage",    label: t("boardTabs.tokenUsage"), href: `/boards/${id}/usage` },
+    { key: "settings", label: t("boardTabs.settings"), href: `/boards/${id}/settings` },
+    { key: "access",   label: t("boardTabs.access"), href: `/boards/${id}/settings/access` },
   ]
 
-  const isActive = (href: string) => {
-    if (href === `/boards/${id}`) {
-      return pathname === href
-    }
-    return pathname === href
-  }
+  const isActive = (href: string) => pathname === href
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shrink-0">
-      <div className="px-4 sm:px-6">
-        {/* Board Name + Status + Tabs in one compact row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 py-3">
-            <h1 className="text-base font-semibold text-gray-900 dark:text-white">{board.name}</h1>
-            <span
-              className={`px-2 py-0.5 text-xs rounded-full flex-shrink-0 ${
-                board.isActive
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-              }`}
-            >
-              {board.isActive ? t("common.active") || "Active" : t("common.inactive") || "Inactive"}
-            </span>
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex gap-0.5">
-            {tabs.map((tab) => {
-              const active = isActive(tab.href)
-              return (
-                <Link
-                  key={tab.key}
-                  href={tab.href}
-                  className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    active
-                      ? "border-blue-600 text-blue-600"
-                      : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300"
-                  }`}
-                >
-                  {tab.label}
-                </Link>
-              )
-            })}
-          </div>
+    <div className="bg-background border-b border-border shrink-0">
+      <div className="px-4 sm:px-6 flex items-center gap-4">
+        {/* Board name + status */}
+        <div className="flex items-center gap-2 py-3 shrink-0">
+          <span className="text-sm font-semibold text-foreground">{board.name}</span>
+          <Badge variant={board.isActive ? "success" : "muted"}>
+            {board.isActive ? t("boardStatus.active") : t("boardStatus.inactive")}
+          </Badge>
         </div>
+
+        {/* Tab nav */}
+        <nav className="flex items-center overflow-x-auto scrollbar-none flex-1">
+          {tabs.map((tab) => (
+            <Link
+              key={tab.key}
+              href={tab.href}
+              className={cn(
+                "px-3 py-3 text-xs font-medium border-b-2 whitespace-nowrap transition-colors",
+                isActive(tab.href)
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              )}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </div>
   )

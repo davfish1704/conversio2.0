@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
-import { assertBoardMemberAccess } from "@/lib/auth-helpers"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 import { createBoardInvite } from "@/lib/channel-invites"
 import { buildDeepLink } from "@/lib/channel-invites"
 
@@ -9,8 +9,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const denied = await assertBoardMemberAccess(params.id, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const body = await req.json().catch(() => ({}))
   const { targetChannelId, campaign, expiresInDays } = body as {
@@ -66,8 +65,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const denied = await assertBoardMemberAccess(params.id, session.user.id)
-  if (denied) return denied
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const rows = await (prisma as any).channelInvite.findMany({
     where: {

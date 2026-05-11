@@ -3,28 +3,30 @@ import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 import { aiRegistry } from "@/lib/ai/registry"
 import { rateLimit } from "@/lib/rate-limit"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 async function generateMessage(
   action: "greeting" | "followup" | "custom",
   contactName: string,
+  boardId: string,
   opts: { context?: string; lastContact?: string; prompt?: string }
 ): Promise<{ content: string; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }> {
   let systemContent: string
   let userContent: string
 
   if (action === "greeting") {
-    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze, professionelle WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze."
-    userContent = `Erstelle eine Begrüßung für ${contactName}${opts.context ? `. Kontext: ${opts.context}` : ""}`
+    systemContent = "You are a friendly assistant for an insurance broker. Write short, professional WhatsApp messages. Max 2 sentences."
+    userContent = `Create a greeting for ${contactName}${opts.context ? `. Context: ${opts.context}` : ""}`
   } else if (action === "followup") {
-    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe eine kurze WhatsApp-Follow-up-Nachricht auf Deutsch. Maximal 2 Sätze. Nicht aufdringlich."
-    userContent = `Follow-up für ${contactName}. Letzter Kontakt: ${opts.lastContact ?? "vor kurzem"}${opts.context ? `. Kontext: ${opts.context}` : ""}`
+    systemContent = "You are a friendly assistant for an insurance broker. Write a short WhatsApp follow-up message. Max 2 sentences. Not pushy."
+    userContent = `Follow-up for ${contactName}. Last contact: ${opts.lastContact ?? "recently"}${opts.context ? `. Context: ${opts.context}` : ""}`
   } else {
-    systemContent = "Du bist ein freundlicher Assistent für einen Versicherungsmakler. Schreibe kurze WhatsApp-Nachrichten auf Deutsch. Maximal 2 Sätze."
+    systemContent = "You are a friendly assistant for an insurance broker. Write short WhatsApp messages. Max 2 sentences."
     userContent = opts.prompt!
   }
 
   const res = await aiRegistry.execute({
-    boardId: "global",
+    boardId,
     purpose: "main",
     messages: [
       { role: "system", content: systemContent },
@@ -65,9 +67,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Resolve conversation for context
+    // Resolve conversation for context and board access
     let conversation = null
-    let contactName = data?.name || "Kunde"
+    let contactName = data?.name || "Customer"
+    let resolvedBoardId = "global"
 
     if (conversationId) {
       conversation = await (prisma as any).conversation.findUnique({
@@ -81,6 +84,15 @@ export async function POST(req: NextRequest) {
       if ((conversation as any)?.lead?.name) {
         contactName = (conversation as any).lead.name
       }
+
+      if ((conversation as any)?.boardId) {
+        resolvedBoardId = (conversation as any).boardId
+        try {
+          await assertBoardAccess({ userId: session.user.id, boardId: resolvedBoardId })
+        } catch (e) {
+          return toNextResponse(e)
+        }
+      }
     }
 
     let result: { content: string; usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } }
@@ -88,16 +100,16 @@ export async function POST(req: NextRequest) {
     try {
       switch (action) {
         case "greeting":
-          result = await generateMessage("greeting", contactName, {
+          result = await generateMessage("greeting", contactName, resolvedBoardId, {
             context: data?.context || conversation?.source || "",
           })
           break
 
         case "followup": {
           const lastContact = conversation?.lastMessageAt
-            ? new Date(conversation.lastMessageAt).toLocaleDateString("de-DE")
-            : "vor kurzem"
-          result = await generateMessage("followup", contactName, { lastContact, context: data?.context })
+            ? new Date(conversation.lastMessageAt).toLocaleDateString("en-US")
+            : "recently"
+          result = await generateMessage("followup", contactName, resolvedBoardId, { lastContact, context: data?.context })
           break
         }
 
@@ -105,7 +117,7 @@ export async function POST(req: NextRequest) {
           if (!data?.prompt) {
             return NextResponse.json({ error: "custom action requires data.prompt" }, { status: 400 })
           }
-          result = await generateMessage("custom", contactName, { prompt: data.prompt })
+          result = await generateMessage("custom", contactName, resolvedBoardId, { prompt: data.prompt })
           break
 
         default:
@@ -126,10 +138,10 @@ export async function POST(req: NextRequest) {
     let phoneNumberId = data?.phoneNumberId
     let resolvedAccessToken: string | null = null
 
-    if (!phoneNumberId && conversation?.boardId) {
+    if (!phoneNumberId && resolvedBoardId !== "global") {
       const { decrypt } = await import("@/lib/crypto/secrets")
       const bc = await prisma.boardChannel.findUnique({
-        where: { boardId_platform: { boardId: conversation.boardId, platform: "whatsapp" } },
+        where: { boardId_platform: { boardId: resolvedBoardId, platform: "whatsapp" } },
         select: { waPhoneNumberId: true, waAccessToken: true },
       })
       if (bc?.waPhoneNumberId && bc.waAccessToken) {

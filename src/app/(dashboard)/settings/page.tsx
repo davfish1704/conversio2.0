@@ -4,19 +4,9 @@ import { useState, useEffect, useContext } from "react"
 import { useTheme } from "@/lib/ThemeContext"
 import { LanguageContext } from "@/lib/LanguageContext"
 import { Settings, Palette, Sun, Moon, Globe, User } from "lucide-react"
-
-
-function InputField({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
-      <input
-        {...props}
-        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-    </div>
-  )
-}
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("general")
@@ -35,7 +25,6 @@ export default function SettingsPage() {
     appearance: t("settings.titleAppearance"),
   }
 
-  // Profil state
   const [profileName, setProfileName] = useState("")
   const [profileEmail, setProfileEmail] = useState("")
   const [profileSaving, setProfileSaving] = useState(false)
@@ -90,24 +79,25 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div>
-              <h3 className="text-base font-medium mb-3 text-gray-900 dark:text-white">{t("settings.language")}</h3>
-              <div className="flex gap-3">
+              <h3 className="text-sm font-medium mb-3 text-foreground">{t("settings.language")}</h3>
+              <div className="flex gap-2">
                 {(["en", "de"] as const).map((lang) => (
                   <button
                     key={lang}
                     onClick={() => setLanguage(lang)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition ${
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors",
                       language === lang
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400"
-                        : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    }`}
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-foreground hover:bg-muted"
+                    )}
                   >
                     <Globe className="w-4 h-4" />
                     {lang === "en" ? "English" : "Deutsch"}
                   </button>
                 ))}
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 {t("settings.autoSaved")}
               </p>
             </div>
@@ -118,42 +108,55 @@ export default function SettingsPage() {
         return (
           <div className="space-y-8 max-w-lg">
             <form onSubmit={saveProfile} className="space-y-4">
-              <h3 className="text-base font-medium text-gray-900 dark:text-white">{t("settings.accountData")}</h3>
-              <InputField label={t("common.name")} type="text" value={profileName} onChange={e => setProfileName(e.target.value)} />
-              <InputField label={t("common.email")} type="email" value={profileEmail} onChange={e => setProfileEmail(e.target.value)} />
+              <h3 className="text-sm font-medium text-foreground">{t("settings.accountData")}</h3>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{t("common.name")}</label>
+                <Input type="text" value={profileName} onChange={e => setProfileName(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{t("common.email")}</label>
+                <Input type="email" value={profileEmail} onChange={e => setProfileEmail(e.target.value)} />
+              </div>
               {profileMsg && (
-                <p className={`text-sm ${profileMsg === t("settings.savedOk") ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                <p className={cn(
+                  "text-xs",
+                  profileMsg === t("settings.savedOk") ? "text-success" : "text-destructive"
+                )}>
                   {profileMsg}
                 </p>
               )}
-              <button
-                type="submit"
-                disabled={profileSaving}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-              >
+              <Button type="submit" size="sm" disabled={profileSaving}>
                 {profileSaving ? t("common.saving") : t("settings.saveBtn")}
-              </button>
+              </Button>
             </form>
 
-            <div className="border-t border-gray-100 dark:border-gray-700" />
+            <div className="border-t border-border" />
 
             <form onSubmit={savePassword} className="space-y-4">
-              <h3 className="text-base font-medium text-gray-900 dark:text-white">{t("settings.changePassword")}</h3>
-              <InputField label={t("settings.currentPassword")} type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} autoComplete="current-password" />
-              <InputField label={t("settings.newPassword")} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" />
-              <InputField label={t("settings.confirmNewPassword")} type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
+              <h3 className="text-sm font-medium text-foreground">{t("settings.changePassword")}</h3>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{t("settings.currentPassword")}</label>
+                <Input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} autoComplete="current-password" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{t("settings.newPassword")}</label>
+                <Input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">{t("settings.confirmNewPassword")}</label>
+                <Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
+              </div>
               {pwMsg && (
-                <p className={`text-sm ${pwMsg === t("settings.passwordChanged") ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                <p className={cn(
+                  "text-xs",
+                  pwMsg === t("settings.passwordChanged") ? "text-success" : "text-destructive"
+                )}>
                   {pwMsg}
                 </p>
               )}
-              <button
-                type="submit"
-                disabled={pwSaving || !currentPw || !newPw || !confirmPw}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-              >
+              <Button type="submit" size="sm" disabled={pwSaving || !currentPw || !newPw || !confirmPw}>
                 {pwSaving ? t("common.saving") : t("settings.changePassword")}
-              </button>
+              </Button>
             </form>
           </div>
         )
@@ -161,31 +164,45 @@ export default function SettingsPage() {
       case "appearance":
         return (
           <div className="space-y-6">
-            <div className="bg-white dark:bg-[#1A1A1A] rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-card rounded-xl border border-border p-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-medium text-gray-900 dark:text-white">{t("settings.darkModeTitle")}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t("settings.darkModeDesc")}</p>
+                  <h3 className="text-sm font-medium text-foreground">{t("settings.darkModeTitle")}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">{t("settings.darkModeDesc")}</p>
                 </div>
                 <button
                   onClick={toggleTheme}
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-                    theme === "dark" ? "bg-blue-600" : "bg-gray-200 dark:bg-gray-700"
-                  }`}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                    theme === "dark" ? "bg-primary" : "bg-muted"
+                  )}
                 >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${theme === "dark" ? "translate-x-6" : "translate-x-1"}`} />
+                  <span className={cn(
+                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    theme === "dark" ? "translate-x-6" : "translate-x-1"
+                  )} />
                 </button>
               </div>
-              <div className="mt-6 flex gap-4">
-                <div className={`flex-1 p-4 rounded-lg border-2 transition ${theme === "light" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700"}`}>
-                  <Sun className="w-6 h-6 mb-2 text-amber-500" />
-                  <p className="font-medium text-gray-900 dark:text-white">{t("settings.lightTheme")}</p>
-                  <p className="text-xs text-gray-500">{t("settings.lightThemeDefault")}</p>
+              <div className="mt-5 flex gap-3">
+                <div className={cn(
+                  "flex-1 p-4 rounded-lg border-2 transition-colors cursor-pointer",
+                  theme === "light" ? "border-primary bg-primary/5" : "border-border"
+                )}
+                  onClick={() => theme === "dark" && toggleTheme()}
+                >
+                  <Sun className="w-5 h-5 mb-2 text-amber-500" />
+                  <p className="text-sm font-medium text-foreground">{t("settings.lightTheme")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("settings.lightThemeDefault")}</p>
                 </div>
-                <div className={`flex-1 p-4 rounded-lg border-2 transition ${theme === "dark" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700"}`}>
-                  <Moon className="w-6 h-6 mb-2 text-blue-400" />
-                  <p className="font-medium text-gray-900 dark:text-white">{t("settings.darkTheme")}</p>
-                  <p className="text-xs text-gray-500">{t("settings.darkThemeEasy")}</p>
+                <div className={cn(
+                  "flex-1 p-4 rounded-lg border-2 transition-colors cursor-pointer",
+                  theme === "dark" ? "border-primary bg-primary/5" : "border-border"
+                )}
+                  onClick={() => theme === "light" && toggleTheme()}
+                >
+                  <Moon className="w-5 h-5 mb-2 text-primary" />
+                  <p className="text-sm font-medium text-foreground">{t("settings.darkTheme")}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("settings.darkThemeEasy")}</p>
                 </div>
               </div>
             </div>
@@ -193,15 +210,15 @@ export default function SettingsPage() {
         )
 
       default:
-        return <div className="text-center py-12 text-gray-500 dark:text-gray-400">{t("common.comingSoon")}</div>
+        return <div className="text-center py-12 text-muted-foreground">{t("common.comingSoon")}</div>
     }
   }
 
   return (
     <div className="flex gap-8">
-      <div className="w-56 shrink-0">
-        <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">{t("settings.title")}</h1>
-        <nav className="space-y-1">
+      <div className="w-52 shrink-0">
+        <h1 className="text-lg font-semibold mb-5 text-foreground">{t("settings.title")}</h1>
+        <nav className="space-y-0.5">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
@@ -209,11 +226,12 @@ export default function SettingsPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
-                }`}
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
               >
                 <Icon className="w-4 h-4" />
                 {tab.label}
@@ -224,8 +242,8 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex-1">
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <h2 className="text-xl font-semibold mb-6 text-gray-900 dark:text-white">{tabTitles[activeTab] ?? activeTab}</h2>
+        <div className="bg-card rounded-xl border border-border p-6">
+          <h2 className="text-base font-semibold mb-5 text-foreground">{tabTitles[activeTab] ?? activeTab}</h2>
           {renderContent()}
         </div>
       </div>

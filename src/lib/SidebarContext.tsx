@@ -6,12 +6,18 @@ interface SidebarContextType {
   collapsed: boolean
   setCollapsed: (v: boolean) => void
   toggleCollapsed: () => void
+  mobileOpen: boolean
+  setMobileOpen: (v: boolean) => void
+  toggleMobile: () => void
 }
 
 const SidebarContext = createContext<SidebarContextType>({
   collapsed: false,
   setCollapsed: () => {},
   toggleCollapsed: () => {},
+  mobileOpen: false,
+  setMobileOpen: () => {},
+  toggleMobile: () => {},
 })
 
 export function useSidebar() {
@@ -20,6 +26,7 @@ export function useSidebar() {
 
 export function SidebarProvider({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -33,12 +40,11 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("sidebar-collapsed", String(collapsed))
   }, [collapsed, mounted])
 
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((prev) => !prev)
-  }, [])
+  const toggleCollapsed = useCallback(() => setCollapsed((p) => !p), [])
+  const toggleMobile = useCallback(() => setMobileOpen((p) => !p), [])
 
   return (
-    <SidebarContext.Provider value={{ collapsed, setCollapsed, toggleCollapsed }}>
+    <SidebarContext.Provider value={{ collapsed, setCollapsed, toggleCollapsed, mobileOpen, setMobileOpen, toggleMobile }}>
       {children}
     </SidebarContext.Provider>
   )

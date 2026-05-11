@@ -52,30 +52,30 @@ export default function TelegramInviteUI({ leadId }: TelegramInviteUIProps) {
             <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-1.97 9.289c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.932z"/>
           </svg>
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h3 className="text-base font-semibold text-foreground">
           Lead noch nicht erreichbar
         </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+        <p className="text-sm text-muted-foreground leading-relaxed">
           Telegram-Bots dürfen nur mit Leads schreiben, die dem Bot zuerst eine Nachricht gesendet haben.
           Sende diesem Lead den Einladungslink — sobald er darauf klickt und Telegram öffnet, ist der Chat aktiv.
         </p>
       </div>
 
       {loading && (
-        <p className="text-sm text-gray-400">Generiere Link…</p>
+        <p className="text-sm text-muted-foreground">Generiere Link…</p>
       )}
 
       {error && (
-        <div className="w-full max-w-sm p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-          <p className="text-xs text-red-400 mt-1">Stelle sicher, dass Telegram in Board-Einstellungen → Kanäle verbunden ist.</p>
+        <div className="w-full max-w-sm p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-xs text-destructive/70 mt-1">Stelle sicher, dass Telegram in Board-Einstellungen → Kanäle verbunden ist.</p>
         </div>
       )}
 
       {link && (
         <div className="w-full max-w-sm space-y-3">
-          <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <code className="flex-1 text-xs text-gray-700 dark:text-gray-300 truncate">{link}</code>
+          <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
+            <code className="flex-1 text-xs text-foreground truncate">{link}</code>
             <button
               onClick={copyLink}
               className="shrink-0 px-3 py-1.5 bg-[#2AABEE] text-white text-xs rounded-lg hover:bg-[#1a9cde] flex items-center gap-1.5 transition-colors"
@@ -87,17 +87,17 @@ export default function TelegramInviteUI({ leadId }: TelegramInviteUIProps) {
 
           <button
             onClick={generateQR}
-            className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-center gap-2 text-sm text-gray-700 dark:text-gray-300 transition-colors"
+            className="w-full px-4 py-2.5 border border-border rounded-lg hover:bg-muted flex items-center justify-center gap-2 text-sm text-foreground transition-colors"
           >
             <QrCode className="w-4 h-4" />
             QR-Code anzeigen
           </button>
 
           {showQR && qrDataUrl && (
-            <div className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg flex flex-col items-center gap-2">
+            <div className="p-4 bg-card border border-border rounded-lg flex flex-col items-center gap-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrDataUrl} alt="Telegram invite QR" className="w-48 h-48" />
-              <p className="text-xs text-gray-400 flex items-center gap-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Send className="w-3 h-3" />
                 Per Kamera oder Screenshot teilen
               </p>

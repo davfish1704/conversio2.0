@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 export async function GET(
   _req: NextRequest,
@@ -11,21 +12,20 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const board = await prisma.board.findFirst({
-    where: {
-      id: params.id,
-      members: { some: { userId: session.user.id } },
-    },
-    include: {
-      _count: { select: { states: true, members: true } },
-      members: {
-        include: { user: { select: { id: true, name: true, email: true, image: true } } },
+  let board
+  try {
+    await assertBoardAccess({ userId: session.user.id, boardId: params.id })
+    board = await prisma.board.findUnique({
+      where: { id: params.id },
+      include: {
+        _count: { select: { states: true, members: true } },
+        members: {
+          include: { user: { select: { id: true, name: true, email: true, image: true } } },
+        },
       },
-    },
-  })
-
-  if (!board) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 })
+    })
+  } catch (e) {
+    return toNextResponse(e)
   }
 
   return NextResponse.json({ board })
@@ -43,16 +43,10 @@ export async function PUT(
   const body = await req.json()
   const { name, description, isActive } = body
 
-  const membership = await prisma.boardMember.findFirst({
-    where: {
-      boardId: params.id,
-      userId: session.user.id,
-      role: { in: ["ADMIN", "AGENT"] },
-    },
-  })
-
-  if (!membership) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  try {
+    await assertBoardAccess({ userId: session.user.id, boardId: params.id })
+  } catch (e) {
+    return toNextResponse(e)
   }
 
   const board = await prisma.board.update({
@@ -76,16 +70,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const membership = await prisma.boardMember.findFirst({
-    where: {
-      boardId: params.id,
-      userId: session.user.id,
-      role: "ADMIN",
-    },
-  })
-
-  if (!membership) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  try {
+    await assertBoardAccess({ userId: session.user.id, boardId: params.id })
+  } catch (e) {
+    return toNextResponse(e)
   }
 
   // ExecutionLog → Conversation has no onDelete cascade; must clean up manually

@@ -1,11 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useContext } from "react"
+import { Trash2, X, Sparkles, Snowflake, ChevronDown, ChevronRight, Plus } from "lucide-react"
 import { type Lead } from "./LeadCard"
 import { getInitials, getAvatarColor, formatRelativeTime } from "@/lib/utils/formatting"
 import { LanguageContext } from "@/lib/LanguageContext"
 import TelegramInviteUI from "@/components/leads/TelegramInviteUI"
 import ChannelInviteUI from "@/components/leads/ChannelInviteUI"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
+import { useToast } from "@/hooks/use-toast"
 
 interface ConversationItem {
   id: string
@@ -48,7 +53,7 @@ interface FieldDefinition {
   id?: string
   key: string
   label: string
-  name?: string  // legacy alias
+  name?: string
   type: string
   required?: boolean
   options?: string[]
@@ -94,7 +99,7 @@ const ChannelIcon = ({ channel, size = "sm" }: { channel: string; size?: "sm" | 
       )
     case "manual":
       return (
-        <span className="inline-flex items-center gap-1 text-gray-500">
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
           <svg className={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
@@ -102,7 +107,7 @@ const ChannelIcon = ({ channel, size = "sm" }: { channel: string; size?: "sm" | 
         </span>
       )
     default:
-      return <span className="text-gray-400 text-xs">—</span>
+      return <span className="text-muted-foreground text-xs">—</span>
   }
 }
 
@@ -130,32 +135,12 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
   const [isDeleting, setIsDeleting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { t, language } = useContext(LanguageContext)
-
-  useEffect(() => {
-    if (lead) {
-      setIsFrozen(lead.frozen || false)
-      setAiEnabled((lead as any).aiEnabled !== false)
-      setNotesValue(String((lead.customData as any)?.notes ?? lead.notes ?? ""))
-      setInviteData(null)
-      setChannelModalOpen(false)
-      setSelectedChannelId(null)
-      loadMessages()
-      loadFieldDefinitions()
-      loadConversations()
-      loadBoardChannels()
-      loadPendingInvites()
-    }
-  }, [lead])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  const { toast } = useToast()
 
   const loadMessages = useCallback(async () => {
     if (!lead) return
     setIsLoading(true)
     try {
-      // Nutze conversationId wenn vorhanden (Lead-basierte API), sonst lead.id als Fallback
       const convId = (lead as any).conversationId || lead.id
       const res = await fetch(`/api/conversations/${convId}/messages`)
       if (!res.ok) throw new Error("Failed to load messages")
@@ -176,9 +161,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       const data = await res.json()
       setFieldDefinitions(data.fields || [])
       const leadAny = lead as unknown as Record<string, unknown>
-      setCustomFields(
-        (leadAny.customData as Record<string, unknown>) || {}
-      )
+      setCustomFields((leadAny.customData as Record<string, unknown>) || {})
     } catch (err) {
       console.error("Field definitions fetch error:", err)
     }
@@ -191,7 +174,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       if (!res.ok) return
       const data = await res.json()
       setConversations(data.conversations || [])
-    } catch { /* silent */ }
+    } catch (err) { console.error("Conversations fetch error:", err) }
   }, [lead])
 
   const loadBoardChannels = useCallback(async () => {
@@ -201,7 +184,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       if (!res.ok) return
       const data = await res.json()
       setBoardChannels((data.channels || []).filter((c: BoardChannelOption) => c.status === "connected"))
-    } catch { /* silent */ }
+    } catch (err) { console.error("Board channels fetch error:", err) }
   }, [boardId])
 
   const loadPendingInvites = useCallback(async () => {
@@ -211,8 +194,28 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       if (!res.ok) return
       const data = await res.json()
       setPendingInvites(data.invites || [])
-    } catch { /* silent */ }
+    } catch (err) { console.error("Pending invites fetch error:", err) }
   }, [lead])
+
+  useEffect(() => {
+    if (lead) {
+      setIsFrozen(lead.frozen || false)
+      setAiEnabled((lead as any).aiEnabled !== false)
+      setNotesValue(String((lead.customData as any)?.notes ?? lead.notes ?? ""))
+      setInviteData(null)
+      setChannelModalOpen(false)
+      setSelectedChannelId(null)
+      loadMessages()
+      loadFieldDefinitions()
+      loadConversations()
+      loadBoardChannels()
+      loadPendingInvites()
+    }
+  }, [lead, loadMessages, loadFieldDefinitions, loadConversations, loadBoardChannels, loadPendingInvites])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   const handleAddChannel = (channelId: string) => {
     setSelectedChannelId(channelId)
@@ -232,14 +235,14 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
       })
       if (!res.ok) {
         const err = await res.json()
-        alert(err.error || "Fehler beim Erstellen der Einladung")
+        toast({ title: err.error || "Fehler beim Erstellen der Einladung", variant: "destructive" })
         return
       }
       const data = await res.json()
       setInviteData({ token: data.token, deepLink: data.deepLink, qrUrl: data.qrUrl, expiresAt: data.expiresAt })
       loadPendingInvites()
     } catch {
-      alert("Netzwerkfehler")
+      toast({ title: "Netzwerkfehler", variant: "destructive" })
     } finally {
       setInviteLoading(false)
     }
@@ -254,7 +257,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customData: { notes: value } }),
       })
-    } catch { /* silent */ }
+    } catch (err) { console.error("Save notes error:", err) }
   }, [lead])
 
   const saveCustomField = useCallback(async (key: string, value: unknown) => {
@@ -298,8 +301,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
       if (!res.ok) throw new Error("Failed to send message")
       const data = await res.json()
-      
-      setMessages((prev) => 
+
+      setMessages((prev) =>
         prev.map((m) => m.id === tempMessage.id ? data.message : m)
       )
 
@@ -393,22 +396,24 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
   const locale = language === "de" ? "de-DE" : "en-US"
 
+  const fieldInputClass = "w-full px-3 py-2 bg-background border border-input rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       {/* Modal Container */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
-        
+      <div className="bg-card rounded-xl shadow-xl border border-border w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between shrink-0">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm ${getAvatarColor(lead.id)}`}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-xs shrink-0 ${getAvatarColor(lead.id)}`}>
               {getInitials(lead.name || lead.phone || "")}
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white text-lg">
+              <h3 className="font-semibold text-foreground text-sm leading-tight">
                 {lead.name || lead.phone}
               </h3>
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                 <ChannelIcon channel={lead.channel || "whatsapp"} />
                 <span>{lead.phone}</span>
                 <span>·</span>
@@ -417,55 +422,55 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={toggleAi}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
                 aiEnabled
-                  ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
+                  ? "bg-primary/10 text-primary hover:bg-primary/15"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              )}
             >
-              {aiEnabled ? "✨ KI an" : "KI aus"}
+              <Sparkles className="w-3 h-3" />
+              {aiEnabled ? "KI an" : "KI aus"}
             </button>
 
             <button
               onClick={toggleFreeze}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
                 isFrozen
-                  ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
+                  ? "bg-primary/10 text-primary hover:bg-primary/15"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              )}
             >
-              {isFrozen ? "❄️ Frozen" : "Freeze"}
+              <Snowflake className="w-3 h-3" />
+              {isFrozen ? "Eingefroren" : "Freeze"}
             </button>
 
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
               title="Lead löschen"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
+              <Trash2 className="w-4 h-4" />
             </button>
 
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-2"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors ml-1"
             >
-              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Main Content: Chat + Data Side by Side */}
         <div className="flex-1 flex overflow-hidden">
-          
+
           {/* Left: Chat or Telegram invite */}
-          <div className="flex-1 flex flex-col min-w-0 border-r border-gray-100 dark:border-gray-800">
+          <div className="flex-1 flex flex-col min-w-0 border-r border-border">
 
             {needsTelegramInvite ? (
               <TelegramInviteUI leadId={lead.id} />
@@ -475,19 +480,20 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {isLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full" />
+                  <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
                 </div>
               ) : messages.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-12 text-muted-foreground">
                   <div className="text-4xl mb-2">💬</div>
                   <p className="text-sm">{t('leadDrawer.noMessages')}</p>
-                  <p className="text-xs mt-1">{t('leadDrawer.startOrGenerate')}</p>
+                  <p className="text-xs mt-1 text-muted-foreground/70">{t('leadDrawer.startOrGenerate')}</p>
                   {aiEnabled && !isFrozen && (
                     <button
                       onClick={generateAiSuggestion}
-                      className="mt-4 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm hover:bg-purple-200 transition-colors"
+                      className="mt-4 inline-flex items-center gap-1.5 px-3 py-2 bg-primary/10 text-primary text-xs rounded-md hover:bg-primary/15 transition-colors"
                     >
-                      ✨ {t('leadDrawer.generateGreeting')}
+                      <Sparkles className="w-3 h-3" />
+                      {t('leadDrawer.generateGreeting')}
                     </button>
                   )}
                 </div>
@@ -498,34 +504,36 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                     className={`flex ${msg.direction === "OUTBOUND" ? "justify-end" : "justify-start"}`}
                   >
                     <div className={`max-w-[75%] ${msg.direction === "OUTBOUND" ? "items-end" : "items-start"}`}>
-                      {/* Sender Label */}
-                      <div className={`text-xs text-gray-400 mb-1 px-1 ${
+                      <div className={cn(
+                        "text-[10px] text-muted-foreground mb-1 px-1",
                         msg.direction === "OUTBOUND" ? "text-right" : "text-left"
-                      }`}>
+                      )}>
                         {msg.direction === "OUTBOUND" ? (
-                          msg.aiGenerated ? <span className="text-purple-500">✨ AI</span> : t('leadDrawer.you')
+                          msg.aiGenerated
+                            ? <span className="text-primary inline-flex items-center gap-0.5"><Sparkles className="w-2.5 h-2.5" /> KI</span>
+                            : t('leadDrawer.you')
                         ) : (
                           lead.name || t('leadDrawer.customer')
                         )}
                       </div>
-                      
-                      {/* Bubble */}
-                      <div className={`px-4 py-3 rounded-2xl text-sm ${
+
+                      <div className={cn(
+                        "px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed",
                         msg.direction === "OUTBOUND"
-                          ? "bg-blue-600 text-white rounded-br-sm"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-sm"
-                      }`}>
-                        <p className="leading-relaxed">{msg.content}</p>
+                          ? "bg-primary text-primary-foreground rounded-br-sm"
+                          : "bg-muted text-foreground rounded-bl-sm"
+                      )}>
+                        {msg.content}
                       </div>
-                      
-                      {/* Meta */}
-                      <div className={`flex items-center gap-1.5 mt-1 px-1 text-xs text-gray-400 ${
+
+                      <div className={cn(
+                        "flex items-center gap-1 mt-1 px-1 text-[10px] text-muted-foreground",
                         msg.direction === "OUTBOUND" ? "justify-end" : "justify-start"
-                      }`}>
+                      )}>
                         <span>{new Date(msg.timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span>
-                        {msg.status === "SENDING" && <span className="text-yellow-500">⏳</span>}
-                        {msg.status === "FAILED" && <span className="text-red-500">❌</span>}
-                        {msg.status === "SENT" && msg.direction === "OUTBOUND" && <span className="text-blue-300">✓</span>}
+                        {msg.status === "SENDING" && <span className="text-warning">⏳</span>}
+                        {msg.status === "FAILED" && <span className="text-destructive">✗</span>}
+                        {msg.status === "SENT" && msg.direction === "OUTBOUND" && <span className="text-primary/60">✓</span>}
                       </div>
                     </div>
                   </div>
@@ -536,31 +544,34 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
             {/* AI Suggestion */}
             {aiSuggestion && !isFrozen && aiEnabled && (
-              <div className="px-4 py-3 bg-purple-50 border-t border-purple-100">
+              <div className="px-4 py-3 bg-primary/5 border-t border-primary/15 shrink-0">
                 <div className="flex items-start gap-3">
-                  <span className="text-purple-500 text-lg">✨</span>
-                  <div className="flex-1">
-                    <p className="text-sm text-purple-900 leading-relaxed">{aiSuggestion}</p>
-                    <div className="flex gap-2 mt-2">
-                      <button
+                  <Sparkles className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground leading-relaxed">{aiSuggestion}</p>
+                    <div className="flex gap-2 mt-2.5 flex-wrap">
+                      <Button
+                        size="sm"
                         onClick={() => sendMessage(aiSuggestion, true)}
-                        className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors font-medium"
                       >
                         {t('leadDrawer.acceptAndSend')}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => setAiSuggestion("")}
-                        className="px-4 py-2 bg-white text-gray-600 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                       >
                         {t('leadDrawer.dismiss')}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         onClick={generateAiSuggestion}
                         disabled={isGenerating}
-                        className="px-4 py-2 bg-white text-purple-600 text-sm rounded-lg border border-purple-200 hover:bg-purple-50 transition-colors disabled:opacity-50"
+                        className="text-primary hover:text-primary"
                       >
-                        {isGenerating ? "..." : t('leadDrawer.regenerate')}
-                      </button>
+                        {isGenerating ? "…" : t('leadDrawer.regenerate')}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -569,71 +580,70 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
             {/* Input */}
             {!isFrozen ? (
-              <div className="p-4 border-t border-gray-100 dark:border-gray-800 shrink-0">
+              <div className="p-4 border-t border-border shrink-0 space-y-2">
                 <div className="flex gap-2">
-                  <input
-                    type="text"
+                  <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage(newMessage)}
                     placeholder={t('leadDrawer.messagePlaceholder')}
-                    className="flex-1 px-4 py-3 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1"
                   />
-                  <button
+                  <Button
                     onClick={() => sendMessage(newMessage)}
                     disabled={!newMessage.trim()}
-                    className="px-5 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    size="sm"
+                    className="px-4"
                   >
                     {t('leadDrawer.send')}
+                  </Button>
+                </div>
+                {aiEnabled && (
+                  <button
+                    onClick={generateAiSuggestion}
+                    disabled={isGenerating}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-primary bg-primary/10 rounded-md hover:bg-primary/15 transition-colors disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {isGenerating ? t('leadDrawer.generating') : t('leadDrawer.aiSuggestion')}
                   </button>
-                </div>
-                <div className="flex gap-2 mt-2">
-                  {aiEnabled && (
-                    <button
-                      onClick={generateAiSuggestion}
-                      disabled={isGenerating}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
-                    >
-                      <span>✨</span>
-                      {isGenerating ? t('leadDrawer.generating') : t('leadDrawer.aiSuggestion')}
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             ) : (
-              <div className="p-4 border-t border-gray-100 bg-blue-50 shrink-0">
-                <p className="text-sm text-blue-700 text-center font-medium">
-                  ❄️ {t('leadDrawer.frozenMessage')}
-                </p>
+              <div className="p-4 border-t border-border bg-muted/50 shrink-0">
+                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Snowflake className="w-3.5 h-3.5" />
+                  {t('leadDrawer.frozenMessage')}
+                </div>
               </div>
             )}
             </>)}
           </div>
 
           {/* Right: Data Panel */}
-          <div className="w-80 bg-gray-50 dark:bg-gray-900 overflow-y-auto shrink-0">
-            <div className="p-5 space-y-5">
-              
+          <div className="w-72 bg-muted/20 overflow-y-auto shrink-0">
+            <div className="p-4 space-y-5">
+
               {/* Contact */}
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
                   {t('leadDrawer.contact')}
                 </h4>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-gray-400">{t('leadDrawer.phone')}</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.phone || "—"}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('leadDrawer.phone')}</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">{lead.phone || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Name</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{lead.name || "—"}</p>
+                    <p className="text-[10px] text-muted-foreground">Name</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">{lead.name || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">{t('leadDrawer.source')}</p>
-                    <p className="text-sm text-gray-700 dark:text-gray-300">{lead.source || "—"}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('leadDrawer.source')}</p>
+                    <p className="text-xs text-foreground mt-0.5">{lead.source || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">{t('leadDrawer.channel')}</p>
+                    <p className="text-[10px] text-muted-foreground">{t('leadDrawer.channel')}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <ChannelIcon channel={lead.channel || "whatsapp"} />
                     </div>
@@ -641,33 +651,36 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                 </div>
               </div>
 
+              {/* Divider */}
+              <div className="border-t border-border" />
+
               {/* Status */}
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
                   Status
                 </h4>
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   <div>
-                    <p className="text-xs text-gray-400">{t('leadDrawer.currentState')}</p>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    <p className="text-[10px] text-muted-foreground">{t('leadDrawer.currentState')}</p>
+                    <p className="text-xs font-medium text-foreground mt-0.5">
                       {states.find((s) => s.id === lead.currentStateId)?.name || "—"}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Lead Score</p>
+                    <p className="text-[10px] text-muted-foreground mb-1.5">Lead Score</p>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-blue-500 rounded-full transition-all"
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all"
                           style={{ width: `${Math.min((lead.leadScore || 0) * 10, 100)}%` }}
                         />
                       </div>
-                      <span className="text-sm font-medium">{lead.leadScore || 0}/10</span>
+                      <span className="text-xs font-medium text-foreground tabular-nums">{lead.leadScore || 0}/10</span>
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">{t('leadDrawer.createdAt')}</p>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-[10px] text-muted-foreground">{t('leadDrawer.createdAt')}</p>
+                    <p className="text-xs text-foreground mt-0.5">
                       {new Date(lead.createdAt).toLocaleDateString(locale)}
                     </p>
                   </div>
@@ -676,35 +689,42 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
               {/* Tags */}
               {lead.tags.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    Tags
-                  </h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {lead.tags.map((tag) => (
-                      <span key={tag} className="px-2.5 py-1 text-xs font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg border border-gray-200 dark:border-gray-700">
-                        {tag}
-                      </span>
-                    ))}
+                <>
+                  <div className="border-t border-border" />
+                  <div>
+                    <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      Tags
+                    </h4>
+                    <div className="flex flex-wrap gap-1">
+                      {lead.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-0.5 text-[10px] font-medium bg-muted text-foreground rounded-md border border-border"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
 
               {/* Channels */}
+              <div className="border-t border-border" />
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                   Channels
                 </h4>
                 <div className="space-y-1.5 mb-2">
                   {conversations.length === 0 ? (
-                    <p className="text-xs text-gray-400">Keine aktiven Channels</p>
+                    <p className="text-xs text-muted-foreground">Keine aktiven Channels</p>
                   ) : (
                     conversations.map((conv) => (
-                      <div key={conv.id} className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
+                      <div key={conv.id} className="flex items-center gap-2 text-xs text-foreground">
                         <ChannelIcon channel={conv.channel} />
-                        <span className="truncate">{conv.externalId || conv.id.slice(0, 8)}</span>
+                        <span className="truncate text-muted-foreground">{conv.externalId || conv.id.slice(0, 8)}</span>
                         {conv.status !== "ACTIVE" && (
-                          <span className="text-gray-400">({conv.status})</span>
+                          <span className="text-muted-foreground/60">({conv.status})</span>
                         )}
                       </div>
                     ))
@@ -720,8 +740,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                       return (
                         <div key={inv.id} className="flex items-center gap-2 text-xs">
                           <ChannelIcon channel={ch?.platform || "manual"} />
-                          <span className="px-1.5 py-0.5 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 rounded border border-yellow-200 dark:border-yellow-800">
-                            Pending — noch {days}d
+                          <span className="px-1.5 py-0.5 bg-warning/10 text-warning rounded border border-warning/20 text-[10px]">
+                            Ausstehend — noch {days}d
                           </span>
                         </div>
                       )
@@ -734,14 +754,15 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                   <div className="relative">
                     <button
                       onClick={() => setShowChannelDropdown((v) => !v)}
-                      className="w-full text-xs px-3 py-1.5 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                      className="w-full inline-flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 border border-dashed border-border rounded-md text-muted-foreground hover:border-primary hover:text-primary transition-colors"
                     >
-                      + Channel hinzufügen
+                      <Plus className="w-3 h-3" />
+                      Channel hinzufügen
                     </button>
                     {showChannelDropdown && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setShowChannelDropdown(false)} />
-                        <div className="absolute left-0 top-8 z-20 w-full bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg py-1">
+                        <div className="absolute left-0 top-9 z-20 w-full bg-popover rounded-lg border border-border shadow-md py-1">
                           {boardChannels
                             .filter((bc) => {
                               const hasConversation = conversations.some((c) => c.channel === bc.platform)
@@ -752,7 +773,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                               <button
                                 key={bc.id}
                                 onClick={() => handleAddChannel(bc.id)}
-                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted transition-colors"
                               >
                                 <ChannelIcon channel={bc.platform} />
                                 <span>{bc.platform === "telegram" ? "Telegram" : bc.platform === "whatsapp" ? "WhatsApp" : bc.platform}</span>
@@ -763,7 +784,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                             const hasPendingInvite = pendingInvites.some((inv) => inv.targetChannelId === bc.id)
                             return !hasConversation && !hasPendingInvite
                           }).length === 0 && (
-                            <p className="px-3 py-2 text-xs text-gray-400">Alle Channels bereits verknüpft</p>
+                            <p className="px-3 py-2 text-xs text-muted-foreground">Alle Channels bereits verknüpft</p>
                           )}
                         </div>
                       </>
@@ -773,8 +794,9 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
               </div>
 
               {/* Notes */}
+              <div className="border-t border-border" />
               <div>
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                   {t('leadDrawer.notes')}
                 </h4>
                 <textarea
@@ -782,169 +804,176 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                   onChange={(e) => setNotesValue(e.target.value)}
                   onBlur={(e) => saveNotes(e.target.value)}
                   placeholder={t('leadDrawer.notesPlaceholder')}
-                  className="w-full px-3 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:text-white"
+                  className="w-full px-3 py-2.5 bg-background border border-input rounded-md text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
                   rows={4}
                 />
               </div>
 
               {/* Dynamic Custom Fields */}
               {fieldDefinitions.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                    {t('leadDrawer.additionalFields')}
-                  </h4>
-                  <div className="space-y-3">
-                    {fieldDefinitions.map((field) => {
-                      const fieldKey = field.key || field.id || field.name || ""
-                      const fieldLabel = field.label || field.name || fieldKey
-                      const currentVal = customFields[fieldKey]
-                      const inputClass = "w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white"
+                <>
+                  <div className="border-t border-border" />
+                  <div>
+                    <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                      {t('leadDrawer.additionalFields')}
+                    </h4>
+                    <div className="space-y-3">
+                      {fieldDefinitions.map((field) => {
+                        const fieldKey = field.key || field.id || field.name || ""
+                        const fieldLabel = field.label || field.name || fieldKey
+                        const currentVal = customFields[fieldKey]
 
-                      return (
-                        <div key={fieldKey}>
-                          <label className="block text-xs text-gray-400 mb-1">
-                            {fieldLabel}
-                            {field.required && <span className="text-red-400 ml-0.5">*</span>}
-                          </label>
+                        return (
+                          <div key={fieldKey}>
+                            <label className="block text-[10px] text-muted-foreground mb-1">
+                              {fieldLabel}
+                              {field.required && <span className="text-destructive ml-0.5">*</span>}
+                            </label>
 
-                          {(field.type === "text" || field.type === "phone" || field.type === "email") && (
-                            <input
-                              type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"}
-                              defaultValue={String(currentVal ?? "")}
-                              className={inputClass}
-                              onBlur={(e) => {
-                                const val = e.target.value
-                                setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                saveCustomField(fieldKey, val)
-                              }}
-                            />
-                          )}
-
-                          {field.type === "number" && (
-                            <input
-                              type="number"
-                              defaultValue={String(currentVal ?? "")}
-                              className={inputClass}
-                              onBlur={(e) => {
-                                const val = e.target.value ? Number(e.target.value) : null
-                                setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                saveCustomField(fieldKey, val)
-                              }}
-                            />
-                          )}
-
-                          {field.type === "date" && (
-                            <input
-                              type="date"
-                              defaultValue={String(currentVal ?? "")}
-                              className={inputClass}
-                              onBlur={(e) => {
-                                const val = e.target.value
-                                setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                saveCustomField(fieldKey, val)
-                              }}
-                            />
-                          )}
-
-                          {field.type === "boolean" && (
-                            <div className="flex items-center gap-2">
+                            {(field.type === "text" || field.type === "phone" || field.type === "email") && (
                               <input
-                                type="checkbox"
-                                id={`field-${fieldKey}`}
-                                defaultChecked={!!currentVal}
-                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                onChange={(e) => {
-                                  const val = e.target.checked
+                                type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"}
+                                defaultValue={String(currentVal ?? "")}
+                                className={fieldInputClass}
+                                onBlur={(e) => {
+                                  const val = e.target.value
                                   setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
                                   saveCustomField(fieldKey, val)
                                 }}
                               />
-                              <label htmlFor={`field-${fieldKey}`} className="text-sm text-gray-700 dark:text-gray-300">
-                                {fieldLabel}
-                              </label>
-                            </div>
-                          )}
+                            )}
 
-                          {field.type === "select" && field.options && (
-                            <select
-                              defaultValue={String(currentVal ?? "")}
-                              className={inputClass}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                saveCustomField(fieldKey, val)
-                              }}
-                            >
-                              <option value="">— Auswählen —</option>
-                              {field.options.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          )}
+                            {field.type === "number" && (
+                              <input
+                                type="number"
+                                defaultValue={String(currentVal ?? "")}
+                                className={fieldInputClass}
+                                onBlur={(e) => {
+                                  const val = e.target.value ? Number(e.target.value) : null
+                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                  saveCustomField(fieldKey, val)
+                                }}
+                              />
+                            )}
 
-                          {field.type === "multiselect" && field.options && (
-                            <div className="space-y-1">
-                              {field.options.map(opt => {
-                                const selected = Array.isArray(currentVal) && (currentVal as string[]).includes(opt)
-                                return (
-                                  <label key={opt} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                                    <input
-                                      type="checkbox"
-                                      checked={selected}
-                                      className="w-3.5 h-3.5 text-blue-600 rounded"
-                                      onChange={(e) => {
-                                        const prev = Array.isArray(currentVal) ? (currentVal as string[]) : []
-                                        const next = e.target.checked ? [...prev, opt] : prev.filter(v => v !== opt)
-                                        setCustomFields(p => ({ ...p, [fieldKey]: next }))
-                                        saveCustomField(fieldKey, next)
-                                      }}
-                                    />
-                                    {opt}
-                                  </label>
-                                )
-                              })}
-                            </div>
-                          )}
+                            {field.type === "date" && (
+                              <input
+                                type="date"
+                                defaultValue={String(currentVal ?? "")}
+                                className={fieldInputClass}
+                                onBlur={(e) => {
+                                  const val = e.target.value
+                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                  saveCustomField(fieldKey, val)
+                                }}
+                              />
+                            )}
 
-                          {(!field.type || !["text","number","date","boolean","select","multiselect","phone","email"].includes(field.type)) && (
-                            <input
-                              type="text"
-                              defaultValue={String(currentVal ?? "")}
-                              className={inputClass}
-                              onBlur={(e) => {
-                                const val = e.target.value
-                                setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                saveCustomField(fieldKey, val)
-                              }}
-                            />
-                          )}
-                        </div>
-                      )
-                    })}
+                            {field.type === "boolean" && (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`field-${fieldKey}`}
+                                  defaultChecked={!!currentVal}
+                                  className="w-4 h-4 rounded border-input text-primary focus:ring-ring"
+                                  onChange={(e) => {
+                                    const val = e.target.checked
+                                    setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                    saveCustomField(fieldKey, val)
+                                  }}
+                                />
+                                <label htmlFor={`field-${fieldKey}`} className="text-xs text-foreground">
+                                  {fieldLabel}
+                                </label>
+                              </div>
+                            )}
+
+                            {field.type === "select" && field.options && (
+                              <select
+                                defaultValue={String(currentVal ?? "")}
+                                className={fieldInputClass}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                  saveCustomField(fieldKey, val)
+                                }}
+                              >
+                                <option value="">— Auswählen —</option>
+                                {field.options.map(opt => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            )}
+
+                            {field.type === "multiselect" && field.options && (
+                              <div className="space-y-1">
+                                {field.options.map(opt => {
+                                  const selected = Array.isArray(currentVal) && (currentVal as string[]).includes(opt)
+                                  return (
+                                    <label key={opt} className="flex items-center gap-2 text-xs text-foreground">
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        className="w-3.5 h-3.5 rounded border-input text-primary"
+                                        onChange={(e) => {
+                                          const prev = Array.isArray(currentVal) ? (currentVal as string[]) : []
+                                          const next = e.target.checked ? [...prev, opt] : prev.filter(v => v !== opt)
+                                          setCustomFields(p => ({ ...p, [fieldKey]: next }))
+                                          saveCustomField(fieldKey, next)
+                                        }}
+                                      />
+                                      {opt}
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {(!field.type || !["text","number","date","boolean","select","multiselect","phone","email"].includes(field.type)) && (
+                              <input
+                                type="text"
+                                defaultValue={String(currentVal ?? "")}
+                                className={fieldInputClass}
+                                onBlur={(e) => {
+                                  const val = e.target.value
+                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                  saveCustomField(fieldKey, val)
+                                }}
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
 
               {/* State History Toggle */}
+              <div className="border-t border-border" />
               <button
                 onClick={() => setShowHistory(!showHistory)}
-                className="w-full text-left text-xs text-blue-600 hover:text-blue-700 font-medium py-2"
+                className="w-full flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium py-1 transition-colors"
               >
-                {showHistory ? "▼" : "▶"} State-Verlauf anzeigen
+                {showHistory
+                  ? <ChevronDown className="w-3 h-3" />
+                  : <ChevronRight className="w-3 h-3" />
+                }
+                State-Verlauf
               </button>
 
               {showHistory && (
                 <div className="space-y-2 text-xs">
                   {((lead.stateHistory as any[]) || []).map((entry, i) => (
-                    <div key={i} className="flex items-start gap-2 text-gray-600">
-                      <span className="text-gray-400 mt-0.5">→</span>
+                    <div key={i} className="flex items-start gap-2 text-muted-foreground">
+                      <span className="text-muted-foreground/50 mt-0.5">→</span>
                       <div>
-                        <span className="font-medium">{entry.fromStateName || "Start"}</span>
+                        <span className="font-medium text-foreground">{entry.fromStateName || "Start"}</span>
                         {" → "}
-                        <span className="font-medium">
+                        <span className="font-medium text-foreground">
                           {states.find((s) => s.id === entry.toStateId)?.name || "?"}
                         </span>
-                        <p className="text-gray-400 mt-0.5">
+                        <p className="text-muted-foreground mt-0.5">
                           {new Date(entry.timestamp).toLocaleString(locale)}
                         </p>
                       </div>
@@ -956,29 +985,34 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
           </div>
         </div>
       </div>
+
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="text-base font-semibold text-gray-900 dark:text-white">Lead löschen?</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              <strong>{lead.name || lead.phone}</strong> wird unwiderruflich gelöscht — inkl. aller Nachrichten und Daten.
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-card rounded-xl shadow-xl border border-border w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-sm font-semibold text-foreground">Lead löschen?</h3>
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">{lead.name || lead.phone}</strong> wird unwiderruflich gelöscht — inkl. aller Nachrichten und Daten.
             </p>
-            <div className="flex gap-3 pt-2">
-              <button
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowDeleteConfirm(false)}
                 disabled={isDeleting}
-                className="flex-1 px-4 py-2 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                className="flex-1"
               >
                 Abbrechen
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={handleDeleteLead}
                 disabled={isDeleting}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                className="flex-1"
               >
                 {isDeleting ? "Löschen…" : "Endgültig löschen"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -986,39 +1020,38 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
       {/* Channel invite modal */}
       {channelModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-card rounded-xl shadow-xl border border-border w-full max-w-md p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white">Channel-Einladung</h3>
+              <h3 className="text-sm font-semibold text-foreground">Channel-Einladung</h3>
               <button
                 onClick={() => { setChannelModalOpen(false); setInviteData(null) }}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             {!inviteData ? (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
                   Wie soll die Einladung übermittelt werden?
                 </p>
-                <button
+                <Button
                   onClick={() => createInvite(true)}
                   disabled={inviteLoading}
-                  className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="w-full"
                 >
                   {inviteLoading ? "Wird erstellt…" : "Jetzt senden"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => createInvite(false)}
                   disabled={inviteLoading}
-                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                  className="w-full"
                 >
                   {inviteLoading ? "Wird erstellt…" : "Nur Link generieren"}
-                </button>
+                </Button>
               </div>
             ) : (
               <ChannelInviteUI

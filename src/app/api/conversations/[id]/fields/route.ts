@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
+import { assertConversationAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 /**
  * PATCH /api/conversations/[id]/fields
@@ -29,11 +30,9 @@ export async function PATCH(
     }
 
     // findFirst mit Board-Membership-Check
-    const conversation = await (prisma as any).conversation.findFirst({
-      where: {
-        id: params.id,
-        board: { members: { some: { userId: session.user.id } } },
-      },
+    try { await assertConversationAccess({ userId: session.user.id, conversationId: params.id }) } catch (e) { return toNextResponse(e) }
+    const conversation = await (prisma as any).conversation.findUnique({
+      where: { id: params.id },
       include: { lead: true },
     })
 

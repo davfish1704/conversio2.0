@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 import { rateLimit } from "@/lib/rate-limit"
 import { decrypt } from "@/lib/crypto/secrets"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 /**
  * WhatsApp Send API
@@ -45,6 +46,11 @@ export async function POST(req: NextRequest) {
         select: { boardId: true },
       })
       if (conversation?.boardId) {
+        try {
+          await assertBoardAccess({ userId: session.user.id, boardId: conversation.boardId })
+        } catch (e) {
+          return toNextResponse(e)
+        }
         const bc = await prisma.boardChannel.findUnique({
           where: { boardId_platform: { boardId: conversation.boardId, platform: "whatsapp" } },
           select: { waPhoneNumberId: true, waAccessToken: true },

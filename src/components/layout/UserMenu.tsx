@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useContext } from "react"
+import Image from "next/image"
 import { signOut } from "next-auth/react"
 import Link from "next/link"
 import { LanguageContext } from "@/lib/LanguageContext"
@@ -35,10 +36,12 @@ export default function UserMenu({ user }: UserMenuProps) {
         className="flex items-center gap-2.5 hover:bg-gray-50 rounded-lg px-2 py-1.5 transition"
       >
         {user.image ? (
-          <img
+          <Image
             src={user.image}
             alt={user.name || ""}
-            className="w-8 h-8 rounded-full object-cover border border-gray-200"
+            width={32}
+            height={32}
+            className="rounded-full object-cover border border-gray-200"
           />
         ) : (
           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">

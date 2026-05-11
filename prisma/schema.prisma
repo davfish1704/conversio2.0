@@ -151,6 +151,7 @@ model Board {
   reports          AdminReport[]
   brain            BoardBrain?
   assets           BoardAsset[]
+  mediaAssets      Asset[]
   executionLogs    ExecutionLog[]
   brainDocuments   BrainDocument[]
   brainRules       BrainRule[]
@@ -225,6 +226,7 @@ model State {
   board         Board          @relation("BoardStates", fields: [boardId], references: [id], onDelete: Cascade)
   leads         Lead[]         @relation("LeadCurrentState")
   conversations Conversation[] @relation("ConversationCurrentState")
+  assetLinks    AssetState[]
 
   @@map("states")
 }
@@ -255,6 +257,8 @@ model Lead {
   tags           String[] @default([])
   leadScore      Int      @default(0)
   stateHistory   Json?
+  stageMovedAt   DateTime?
+  stageMovedBy   String?
   customData     Json     @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -455,7 +459,7 @@ model BoardBrain {
   stylePrompt           String   @db.Text
   infoPrompt            String   @db.Text
   rulePrompt            String   @db.Text
-  defaultModel          String   @default("dummy")
+  defaultModel          String   @default("gpt-4o-mini")
   temperature           Float    @default(0.7)
   maxTokens             Int      @default(500)
   language              String   @default("de")
@@ -470,16 +474,16 @@ model BoardBrain {
 }
 
 model BoardAsset {
-  id        String    @id @default(cuid())
+  id        String         @id @default(cuid())
   boardId   String
-  type      AssetType
+  type      BrainAssetType
   name      String
-  content   String?   @db.Text
+  content   String?        @db.Text
   fileUrl   String?
   metadata  Json?
-  isActive  Boolean   @default(true)
+  isActive  Boolean        @default(true)
   tags      String[]
-  createdAt DateTime  @default(now())
+  createdAt DateTime       @default(now())
 
   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
 
@@ -487,13 +491,61 @@ model BoardAsset {
   @@map("board_assets")
 }
 
-enum AssetType {
+enum BrainAssetType {
   AUDIO_MEMO
   PDF_DOC
   IMAGE_ASSET
   TEXT_SNIPPET
   TEMPLATE
   KNOWLEDGE_BASE
+}
+
+// ============================================
+// MEDIA ASSETS (R2-backed file storage)
+// ============================================
+
+model Asset {
+  id          String       @id @default(cuid())
+  boardId     String
+  board       Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  type        AssetType
+  mimeType    String
+  sizeBytes   Int
+  r2Key       String       @unique
+  publicUrl   String
+  tags        String[]     @default([])
+  uploadedBy  String?
+  links       AssetState[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([boardId])
+  @@index([boardId, type])
+  @@index([tags], type: Gin)
+  @@map("assets")
+}
+
+model AssetState {
+  id        String   @id @default(cuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  stateId   String
+  state     State    @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([assetId, stateId])
+  @@index([stateId])
+  @@map("asset_states")
+}
+
+enum AssetType {
+  IMAGE
+  PDF
+  AUDIO
+  VIDEO
+  DOCUMENT
 }
 
 model BrainDocument {

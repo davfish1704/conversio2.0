@@ -6,6 +6,10 @@ import BoardSkeleton from "@/components/boards/BoardSkeleton"
 import BoardTabs from "@/components/boards/BoardTabs"
 import { LanguageContext } from "@/lib/LanguageContext"
 import { useToast } from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Sparkles, X } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface Board {
   id: string
@@ -60,7 +64,7 @@ export default function BoardSettingsPage() {
 
   // AI Provider Config
   const [aiProvider, setAiProvider] = useState("groq")
-  const [aiModel, setAiModel] = useState("llama-3.3-70b-versatile")
+  const [aiModel, setAiModel] = useState("gpt-4o-mini")
   const [aiFallbackProvider, setAiFallbackProvider] = useState("")
   const [aiFallbackModel, setAiFallbackModel] = useState("")
   const [savingAi, setSavingAi] = useState(false)
@@ -87,6 +91,8 @@ export default function BoardSettingsPage() {
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : ""
 
+  const selectClass = "w-full px-3 py-2 text-sm border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+
   useEffect(() => {
     fetch(`/api/boards/${id}`)
       .then(r => r.json())
@@ -110,7 +116,7 @@ export default function BoardSettingsPage() {
       .then(data => {
         if (data.config) {
           setAiProvider(data.config.defaultProvider || "groq")
-          setAiModel(data.config.defaultModel || "llama-3.3-70b-versatile")
+          setAiModel(data.config.defaultModel || "gpt-4o-mini")
           setAiFallbackProvider(data.config.fallbackProvider || "")
           setAiFallbackModel(data.config.fallbackModel || "")
         }
@@ -156,7 +162,6 @@ export default function BoardSettingsPage() {
         toast({ title: "Keine Felder generiert — füge zuerst KI-States mit Missionen hinzu.", variant: "destructive" })
         return
       }
-      // Filter out already-existing keys
       const existingKeys = new Set(customFields.map(f => f.key))
       const newOnes = data.fields.filter((f: CustomField) => !existingKeys.has(f.key))
       setPreviewFields(newOnes)
@@ -219,7 +224,6 @@ export default function BoardSettingsPage() {
     try {
       const res = await fetch(`/api/boards/${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Delete failed")
-      // Remove stale nav pointer so CRM dropdown doesn't keep linking to this board
       if (typeof window !== "undefined") {
         const stored = localStorage.getItem("crm_last_board_id")
         if (stored === id) localStorage.removeItem("crm_last_board_id")
@@ -338,45 +342,55 @@ export default function BoardSettingsPage() {
   const waChannel = channels.find(c => c.platform === "whatsapp")
 
   if (loading) return <BoardSkeleton />
-  if (!board) return <div className="p-8 text-center text-gray-500">Board not found</div>
+  if (!board) return <div className="p-8 text-center text-muted-foreground text-sm">Board nicht gefunden</div>
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-background">
       <BoardTabs board={board} />
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 space-y-5">
 
         {/* Board Info */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t("settings.boardSettings")}</h2>
+        <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-foreground">{t("settings.boardSettings")}</h2>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("common.name")}</label>
-            <input type="text" value={boardName} onChange={e => setBoardName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{t("common.name")}</label>
+            <Input value={boardName} onChange={e => setBoardName(e.target.value)} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("common.description")}</label>
-            <textarea value={boardDesc} onChange={e => setBoardDesc(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label className="block text-xs font-medium text-muted-foreground mb-1">{t("common.description")}</label>
+            <textarea
+              value={boardDesc}
+              onChange={e => setBoardDesc(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+            />
           </div>
-          <div className="flex items-center gap-3">
-            <input type="checkbox" checked={boardActive} onChange={e => setBoardActive(e.target.checked)} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("board.active")}</label>
+          <div className="flex items-center gap-2.5">
+            <input
+              type="checkbox"
+              checked={boardActive}
+              onChange={e => setBoardActive(e.target.checked)}
+              className="w-4 h-4 rounded border-input text-primary focus:ring-ring"
+            />
+            <label className="text-sm text-foreground">{t("board.active")}</label>
           </div>
-          <div className="flex gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          <div className="flex gap-2 pt-3 border-t border-border">
+            <Button size="sm" onClick={handleSave} disabled={saving}>
               {saving ? t("common.saving") : t("settings.saveChanges")}
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* AI Configuration */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+        <div className="bg-card rounded-xl border border-border p-5 space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">KI-Konfiguration</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Welcher Anbieter und welches Modell für dieses Board verwendet wird</p>
+            <h2 className="text-sm font-semibold text-foreground">KI-Konfiguration</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Welcher Anbieter und welches Modell für dieses Board verwendet wird</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Standard-Anbieter</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Standard-Anbieter</label>
               <select
                 value={aiProvider}
                 onChange={e => {
@@ -384,7 +398,7 @@ export default function BoardSettingsPage() {
                   const models = providerModels[e.target.value]?.models
                   if (models?.length) setAiModel(models[0].value)
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={selectClass}
               >
                 {Object.entries(providerModels).map(([key, val]) => (
                   <option key={key} value={key}>{val.label}</option>
@@ -392,11 +406,11 @@ export default function BoardSettingsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Modell</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Modell</label>
               <select
                 value={aiModel}
                 onChange={e => setAiModel(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={selectClass}
               >
                 {(providerModels[aiProvider]?.models ?? []).map(m => (
                   <option key={m.value} value={m.value}>{m.label}</option>
@@ -406,14 +420,14 @@ export default function BoardSettingsPage() {
           </div>
 
           {PROVIDER_COST_EST[aiModel] != null && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               ~{PROVIDER_COST_EST[aiModel].toFixed(3)} € pro 1.000 Nachrichten (Schätzung)
             </p>
           )}
 
-          <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Fallback-Anbieter (optional)</label>
-            <div className="grid grid-cols-2 gap-4">
+          <div className="border-t border-border pt-4">
+            <label className="block text-xs font-medium text-muted-foreground mb-2">Fallback-Anbieter (optional)</label>
+            <div className="grid grid-cols-2 gap-3">
               <select
                 value={aiFallbackProvider}
                 onChange={e => {
@@ -421,7 +435,7 @@ export default function BoardSettingsPage() {
                   const models = providerModels[e.target.value]?.models
                   if (models?.length) setAiFallbackModel(models[0].value)
                 }}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={selectClass}
               >
                 <option value="">— Kein Fallback —</option>
                 {Object.entries(providerModels).filter(([k]) => k !== aiProvider).map(([key, val]) => (
@@ -432,7 +446,7 @@ export default function BoardSettingsPage() {
                 <select
                   value={aiFallbackModel}
                   onChange={e => setAiFallbackModel(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={selectClass}
                 >
                   {(providerModels[aiFallbackProvider]?.models ?? []).map(m => (
                     <option key={m.value} value={m.value}>{m.label}</option>
@@ -442,95 +456,122 @@ export default function BoardSettingsPage() {
             </div>
           </div>
 
-          <button onClick={saveAiConfig} disabled={savingAi} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm">
+          <Button size="sm" onClick={saveAiConfig} disabled={savingAi}>
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
             {savingAi ? "Speichern..." : "KI-Konfiguration speichern"}
-          </button>
+          </Button>
         </div>
 
         {/* Channel Connections */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Kanäle verbinden</h2>
+        <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-foreground">Kanäle verbinden</h2>
 
           {/* Telegram */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <div className="border border-border rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-lg">✈️</span>
-                <h3 className="font-medium text-gray-900 dark:text-white">Telegram Bot</h3>
+                <span className="text-base">✈️</span>
+                <h3 className="text-sm font-medium text-foreground">Telegram Bot</h3>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${tgChannel?.status === "connected" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+              <span className={cn(
+                "text-xs px-2 py-0.5 rounded-md font-medium",
+                tgChannel?.status === "connected"
+                  ? "bg-success/10 text-success"
+                  : "bg-muted text-muted-foreground"
+              )}>
                 {tgChannel?.status === "connected" ? `@${tgChannel.telegramBotUsername}` : "Nicht verbunden"}
               </span>
             </div>
             {tgChannel?.status === "connected" ? (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Webhook: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-xs">{appUrl}/api/telegram/webhook/{id}</code></p>
-                <button onClick={disconnectTelegram} disabled={connectingTg} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50">
-                  {connectingTg ? "..." : "Trennen"}
-                </button>
+              <div className="space-y-2.5">
+                <p className="text-xs text-muted-foreground">
+                  Webhook: <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{appUrl}/api/telegram/webhook/{id}</code>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={disconnectTelegram}
+                  disabled={connectingTg}
+                  className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
+                >
+                  {connectingTg ? "…" : "Trennen"}
+                </Button>
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Token von @BotFather eingeben</p>
+                <p className="text-xs text-muted-foreground">Token von @BotFather eingeben</p>
                 <div className="flex gap-2">
-                  <input type="password" value={tgToken} onChange={e => setTgToken(e.target.value)} placeholder="1234567890:AAF..." className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <button onClick={connectTelegram} disabled={connectingTg || !tgToken.trim()} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                    {connectingTg ? "..." : "Verbinden"}
-                  </button>
+                  <Input
+                    type="password"
+                    value={tgToken}
+                    onChange={e => setTgToken(e.target.value)}
+                    placeholder="1234567890:AAF..."
+                    className="flex-1"
+                  />
+                  <Button size="sm" onClick={connectTelegram} disabled={connectingTg || !tgToken.trim()}>
+                    {connectingTg ? "…" : "Verbinden"}
+                  </Button>
                 </div>
               </div>
             )}
           </div>
 
           {/* WhatsApp */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <div className="border border-border rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-lg">💬</span>
-                <h3 className="font-medium text-gray-900 dark:text-white">WhatsApp Business</h3>
+                <span className="text-base">💬</span>
+                <h3 className="text-sm font-medium text-foreground">WhatsApp Business</h3>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${waChannel?.status === "connected" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+              <span className={cn(
+                "text-xs px-2 py-0.5 rounded-md font-medium",
+                waChannel?.status === "connected"
+                  ? "bg-success/10 text-success"
+                  : "bg-muted text-muted-foreground"
+              )}>
                 {waChannel?.status === "connected" ? `${waChannel.waPhoneNumberId}` : "Nicht verbunden"}
               </span>
             </div>
             {waChannel?.status === "connected" ? (
               <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Webhook URL für Meta App: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-xs">{appUrl}/api/whatsapp/webhook/{id}</code></p>
+                <p className="text-xs text-muted-foreground">
+                  Webhook URL für Meta App: <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{appUrl}/api/whatsapp/webhook/{id}</code>
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <input type="text" value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="Phone Number ID" className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="text" value={waBiz} onChange={e => setWaBiz(e.target.value)} placeholder="Business Account ID" className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="password" value={waToken} onChange={e => setWaToken(e.target.value)} placeholder="Access Token" className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="text" value={waVerify} onChange={e => setWaVerify(e.target.value)} placeholder="Verify Token (selbst wählen)" className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <Input value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="Phone Number ID" />
+                  <Input value={waBiz} onChange={e => setWaBiz(e.target.value)} placeholder="Business Account ID" />
+                  <Input type="password" value={waToken} onChange={e => setWaToken(e.target.value)} placeholder="Access Token" />
+                  <Input value={waVerify} onChange={e => setWaVerify(e.target.value)} placeholder="Verify Token (selbst wählen)" />
                 </div>
-                <button onClick={connectWhatsApp} disabled={connectingWa || !waPhone.trim() || !waToken.trim()} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-                  {connectingWa ? "..." : "WhatsApp verbinden"}
-                </button>
+                <Button size="sm" onClick={connectWhatsApp} disabled={connectingWa || !waPhone.trim() || !waToken.trim()}>
+                  {connectingWa ? "…" : "WhatsApp verbinden"}
+                </Button>
               </div>
             )}
           </div>
 
           {/* Instagram placeholder */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 opacity-60">
+          <div className="border border-border rounded-lg p-4 opacity-50">
             <div className="flex items-center gap-2">
-              <span className="text-lg">📸</span>
-              <h3 className="font-medium text-gray-900 dark:text-white">Instagram</h3>
-              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">Demnächst — Meta Approval ausstehend</span>
+              <span className="text-base">📸</span>
+              <h3 className="text-sm font-medium text-foreground">Instagram</h3>
+              <span className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground">Demnächst — Meta Approval ausstehend</span>
             </div>
           </div>
         </div>
 
         {/* Akquise-Links */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+        <div className="bg-card rounded-xl border border-border p-5 space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Akquise-Links</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Generiere Start-Links für Meta Ads, QR-Codes oder Direktversand</p>
+            <h2 className="text-sm font-semibold text-foreground">Akquise-Links</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Generiere Start-Links für Meta Ads, QR-Codes oder Direktversand</p>
           </div>
 
           {channels.filter(c => c.status === "connected" && ["telegram", "whatsapp"].includes(c.platform)).length === 0 && (
-            <p className="text-sm text-gray-400 italic">Verbinde zuerst einen Kanal (Telegram oder WhatsApp), um Akquise-Links zu generieren.</p>
+            <p className="text-xs text-muted-foreground italic">Verbinde zuerst einen Kanal (Telegram oder WhatsApp), um Akquise-Links zu generieren.</p>
           )}
 
           {channels.filter(c => c.status === "connected" && ["telegram", "whatsapp"].includes(c.platform)).map(ch => {
@@ -541,47 +582,48 @@ export default function BoardSettingsPage() {
             const chInvites = acqInvites.filter(inv => inv.platform === ch.platform)
 
             return (
-              <div key={ch.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
-                <h3 className="font-medium text-gray-900 dark:text-white text-sm">{label}</h3>
+              <div key={ch.id} className="border border-border rounded-lg p-4 space-y-3">
+                <h3 className="text-xs font-semibold text-foreground">{label}</h3>
 
                 <div className="flex gap-2">
-                  <input
-                    type="text"
+                  <Input
                     value={acqCampaign[ch.id] ?? ""}
                     onChange={e => setAcqCampaign(prev => ({ ...prev, [ch.id]: e.target.value }))}
                     placeholder="Campaign (optional, z.B. meta_ad_mai)"
-                    className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1"
                   />
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => generateAcqInvite(ch.id)}
                     disabled={!!acqGenerating[ch.id]}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
                   >
-                    {acqGenerating[ch.id] ? "..." : "Link generieren"}
-                  </button>
+                    {acqGenerating[ch.id] ? "…" : "Link generieren"}
+                  </Button>
                 </div>
 
                 {generated && (
-                  <div className="space-y-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <div className="space-y-3 bg-muted/30 rounded-lg p-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Link:</span>
-                      <code className="flex-1 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-1 rounded truncate">{generated.deepLink}</code>
-                      <button
+                      <span className="text-xs text-muted-foreground shrink-0">Link:</span>
+                      <code className="flex-1 text-xs bg-background border border-border px-2 py-1 rounded-md font-mono truncate">{generated.deepLink}</code>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => copyToClipboard(generated.deepLink)}
-                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 shrink-0"
+                        className="shrink-0"
                       >
                         Kopieren
-                      </button>
+                      </Button>
                     </div>
                     <div className="flex items-start gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={generated.qrUrl} alt="QR-Code" width={96} height={96} className="rounded border border-gray-200 dark:border-gray-700" />
+                      <img src={generated.qrUrl} alt="QR-Code" width={80} height={80} className="rounded border border-border" />
                       <div className="space-y-1.5">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Gültig bis: {formatAcqDate(generated.expiresAt)}</p>
+                        <p className="text-xs text-muted-foreground">Gültig bis: {formatAcqDate(generated.expiresAt)}</p>
                         <a
                           href={generated.qrUrl}
                           download="acquisition-qr.png"
-                          className="inline-block px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+                          className="inline-flex items-center px-3 py-1.5 text-xs border border-border text-foreground rounded-md hover:bg-muted transition-colors"
                         >
                           QR Download
                         </a>
@@ -592,16 +634,16 @@ export default function BoardSettingsPage() {
 
                 {chInvites.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Bestehende Links</p>
+                    <p className="text-[10px] font-medium text-muted-foreground mb-1">Bestehende Links</p>
                     {chInvites.map(inv => (
-                      <div key={inv.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 p-2 bg-gray-50 dark:bg-gray-800/50 rounded">
-                        <code className="font-mono">{inv.token.slice(0, 8)}…</code>
-                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                        <span>{inv.campaign ?? "—"}</span>
-                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                        <span>⏰ {daysLeft(inv.expiresAt)}d</span>
-                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                        <span className="text-green-600 dark:text-green-400">✓</span>
+                      <div key={inv.id} className="flex items-center gap-2 text-xs p-2 bg-muted/30 rounded-md">
+                        <code className="font-mono text-muted-foreground">{inv.token.slice(0, 8)}…</code>
+                        <span className="text-border">|</span>
+                        <span className="text-foreground">{inv.campaign ?? "—"}</span>
+                        <span className="text-border">|</span>
+                        <span className="text-muted-foreground">⏰ {daysLeft(inv.expiresAt)}d</span>
+                        <span className="text-border">|</span>
+                        <span className="text-success">✓</span>
                       </div>
                     ))}
                   </div>
@@ -612,62 +654,61 @@ export default function BoardSettingsPage() {
         </div>
 
         {/* Custom Fields */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-4">
+        <div className="bg-card rounded-xl border border-border p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Benutzerdefinierte Felder</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Felder, die in der Lead-Seitenleiste angezeigt werden</p>
+              <h2 className="text-sm font-semibold text-foreground">Benutzerdefinierte Felder</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Felder, die in der Lead-Seitenleiste angezeigt werden</p>
             </div>
-            <button
+            <Button
+              size="sm"
+              variant="outline"
               onClick={generateCustomFields}
               disabled={generatingFields}
-              className="flex items-center gap-1.5 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition"
+              className="text-primary border-primary/20 hover:bg-primary/10 hover:text-primary"
             >
-              {generatingFields ? "⏳ Generiere..." : "🪄 Aus Mission generieren"}
-            </button>
+              <Sparkles className="w-3 h-3 mr-1.5" />
+              {generatingFields ? "Generiere…" : "Aus Mission generieren"}
+            </Button>
           </div>
 
           {/* Preview from AI */}
           {previewFields && previewFields.length > 0 && (
-            <div className="border border-purple-200 dark:border-purple-800 rounded-lg p-4 bg-purple-50 dark:bg-purple-900/20 space-y-3">
-              <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
+            <div className="border border-primary/20 rounded-lg p-4 bg-primary/5 space-y-3">
+              <p className="text-xs font-medium text-foreground">
                 {previewFields.length} neue Felder gefunden — bestehende Felder werden nicht überschrieben.
               </p>
               <div className="space-y-1">
                 {previewFields.map(f => (
-                  <div key={f.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <div key={f.key} className="flex items-center gap-2 text-xs text-foreground">
                     <span className="font-medium">{f.label}</span>
-                    <span className="text-gray-400">({f.type})</span>
-                    {f.required && <span className="text-red-400 text-xs">*</span>}
+                    <span className="text-muted-foreground">({f.type})</span>
+                    {f.required && <span className="text-destructive">*</span>}
                   </div>
                 ))}
               </div>
               <div className="flex gap-2">
-                <button onClick={mergePreviewFields} disabled={savingFields} className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50">
-                  Übernehmen
-                </button>
-                <button onClick={() => setPreviewFields(null)} className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-                  Verwerfen
-                </button>
+                <Button size="sm" onClick={mergePreviewFields} disabled={savingFields}>Übernehmen</Button>
+                <Button size="sm" variant="outline" onClick={() => setPreviewFields(null)}>Verwerfen</Button>
               </div>
             </div>
           )}
 
           {/* Existing fields list */}
           {customFields.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {customFields.map((field, i) => (
-                <div key={field.key} className="flex items-center gap-3 p-3 border border-gray-100 dark:border-gray-700 rounded-lg">
+                <div key={field.key} className="flex items-center gap-3 p-3 border border-border rounded-lg">
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{field.label}</span>
-                    <span className="ml-2 text-xs text-gray-400">{field.key} · {field.type}{field.required ? " *" : ""}</span>
+                    <span className="text-xs font-medium text-foreground">{field.label}</span>
+                    <span className="ml-2 text-[10px] text-muted-foreground">{field.key} · {field.type}{field.required ? " *" : ""}</span>
                   </div>
                   <button
                     onClick={() => {
                       const updated = customFields.filter((_, idx) => idx !== i)
                       saveCustomFields(updated)
                     }}
-                    className="text-xs text-red-500 hover:text-red-700 shrink-0"
+                    className="text-xs text-destructive hover:text-destructive/80 shrink-0 transition-colors"
                   >
                     Entfernen
                   </button>
@@ -677,30 +718,30 @@ export default function BoardSettingsPage() {
           )}
 
           {customFields.length === 0 && !previewFields && (
-            <p className="text-sm text-gray-400 italic">Noch keine Felder. Füge welche hinzu oder generiere sie aus den Flow-Missionen.</p>
+            <p className="text-xs text-muted-foreground italic">Noch keine Felder. Füge welche hinzu oder generiere sie aus den Flow-Missionen.</p>
           )}
 
-          {/* Add new field inline */}
-          <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Feld hinzufügen</p>
+          {/* Add new field */}
+          <div className="border-t border-border pt-4">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Feld hinzufügen</p>
             <div className="grid grid-cols-4 gap-2">
-              <input
-                type="text"
+              <Input
                 value={newField.label}
                 onChange={e => setNewField({ ...newField, label: e.target.value, key: newField.key || e.target.value.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "") })}
                 placeholder="Label (z.B. Budget)"
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 col-span-2"
+                className="col-span-2"
               />
               <select
                 value={newField.type}
                 onChange={e => setNewField({ ...newField, type: e.target.value })}
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 text-sm border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 {["text","number","date","select","multiselect","boolean","phone","email"].map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
-              <button
+              <Button
+                size="sm"
                 onClick={() => {
                   if (!newField.label.trim()) return
                   const field = { ...newField, key: newField.key || newField.label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "") }
@@ -709,30 +750,46 @@ export default function BoardSettingsPage() {
                   setNewField({ key: "", label: "", type: "text", required: false })
                 }}
                 disabled={!newField.label.trim() || savingFields}
-                className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 + Hinzufügen
-              </button>
+              </Button>
             </div>
           </div>
         </div>
 
         {/* Danger Zone */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-900 p-6">
-          <h3 className="text-lg font-semibold text-red-700 dark:text-red-400">{t("board.dangerZone")}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t("board.deleteWarning")}</p>
-          <button onClick={() => setShowDelete(true)} className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">{t("board.deleteBoard")}</button>
+        <div className="bg-card rounded-xl border border-destructive/20 p-5">
+          <h3 className="text-sm font-semibold text-destructive">{t("board.dangerZone")}</h3>
+          <p className="text-xs text-muted-foreground mt-1">{t("board.deleteWarning")}</p>
+          <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)} className="mt-4">
+            {t("board.deleteBoard")}
+          </Button>
         </div>
       </div>
 
+      {/* Delete confirmation modal */}
       {showDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{t("board.deleteBoard")}?</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{t("board.deleteConfirm")} <strong>{board.name}</strong>? {t("board.deleteConfirm2")}</p>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowDelete(false)} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">{t("common.cancel")}</button>
-              <button onClick={handleDelete} disabled={deleting} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">{deleting ? t("common.deleting") : t("common.delete")}</button>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">{t("board.deleteBoard")}?</h3>
+              <button
+                onClick={() => setShowDelete(false)}
+                className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("board.deleteConfirm")} <strong className="text-foreground">{board.name}</strong>? {t("board.deleteConfirm2")}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowDelete(false)} className="flex-1">
+                {t("common.cancel")}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="flex-1">
+                {deleting ? t("common.deleting") : t("common.delete")}
+              </Button>
             </div>
           </div>
         </div>

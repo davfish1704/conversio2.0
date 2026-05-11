@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -13,14 +14,7 @@ export async function GET(
   const session = await auth()
   if (!session?.user?.id) return jsonError("Unauthorized", 401)
 
-  const board = await prisma.board.findFirst({
-    where: {
-      id: params.id,
-      members: { some: { userId: session.user.id } },
-    },
-    select: { id: true },
-  })
-  if (!board) return jsonError("Board not found", 404)
+  try { await assertBoardAccess({ userId: session.user.id, boardId: params.id }) } catch (e) { return toNextResponse(e) }
 
   const days = Number(req.nextUrl.searchParams.get("days") ?? "30")
   const since30d = new Date(Date.now() - days * 24 * 60 * 60 * 1000)

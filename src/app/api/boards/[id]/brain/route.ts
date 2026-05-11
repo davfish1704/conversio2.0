@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
 function jsonError(message: string, code: string, status: number) {
   return NextResponse.json({ error: true, message, code }, { status })
@@ -16,14 +17,9 @@ export async function GET(
   }
 
   try {
-    const board = await prisma.board.findFirst({
-      where: {
-        id: params.id,
-        members: { some: { userId: session.user.id } },
-      },
-    })
-
-    if (!board) {
+    try {
+      await assertBoardAccess({ userId: session.user.id, boardId: params.id })
+    } catch (e) {
       return jsonError("Board was deleted or you don't have access.", "BOARD_NOT_FOUND", 404)
     }
 
@@ -37,7 +33,7 @@ export async function GET(
         stylePrompt: "",
         infoPrompt: "",
         rulePrompt: "",
-        defaultModel: "conversio",
+        defaultModel: "gpt-4o-mini",
         temperature: 0.7,
         language: "en",
         tone: "friendly",
@@ -59,15 +55,9 @@ export async function PUT(
   }
 
   try {
-    const membership = await prisma.boardMember.findFirst({
-      where: {
-        boardId: params.id,
-        userId: session.user.id,
-        role: { in: ["ADMIN", "AGENT"] },
-      },
-    })
-
-    if (!membership) {
+    try {
+      await assertBoardAccess({ userId: session.user.id, boardId: params.id })
+    } catch (e) {
       return jsonError("You don't have permission for this action.", "FORBIDDEN", 403)
     }
 
