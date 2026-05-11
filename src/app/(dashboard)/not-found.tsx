@@ -1,7 +1,12 @@
+"use client"
+
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Home, ArrowLeft } from "lucide-react"
 
 export default function NotFound() {
+  const router = useRouter()
+
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-8">
       <div className="bg-card border border-border rounded-xl p-10 max-w-md w-full text-center shadow-sm animate-fade-up">
@@ -19,7 +24,7 @@ export default function NotFound() {
             Dashboard
           </Link>
           <button
-            onClick={() => history.back()}
+            onClick={() => router.back()}
             className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
