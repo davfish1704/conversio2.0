@@ -18,3 +18,7 @@ test-results/
 tests/e2e/.auth/user.json
 graphify-out/
 .claude-flow/
+
+# TypeScript build cache (per-machine, never commit)
+*.tsbuildinfo
+tsconfig.tsbuildinfo

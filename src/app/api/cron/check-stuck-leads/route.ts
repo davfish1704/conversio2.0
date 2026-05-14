@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { notifyAdmin } from "@/lib/notifications/admin-notify"
 
-const STUCK_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24 hours
-const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000    // don't re-notify within 6 hours
+const STUCK_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24 Stunden
+const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000    // Nicht erneut benachrichtigen innerhalb von 6 Stunden
 
 export async function GET(req: NextRequest) {
   return POST(req)
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Cleanup processed webhooks older than 7 days
+  // Processed Webhooks älter als 7 Tage bereinigen
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   await prisma.processedWebhook.deleteMany({ where: { processedAt: { lt: sevenDaysAgo } } })
 
@@ -40,22 +40,23 @@ export async function POST(req: NextRequest) {
   let notified = 0
 
   for (const conv of stuckConversations) {
-    // Dedupe: skip if we already notified about this conversation recently
+    // Deduplizierung: überspringen wenn wir kürzlich über diesen Lead benachrichtigt haben
     const recent = await prisma.adminNotification.findFirst({
       where: {
-        type: "LEAD_STUCK",
-        leadId: conv.id,
+        level: "WARNING",
+        leadId: conv.leadId,
         createdAt: { gt: dedupeCutoff },
       },
     })
     if (recent) continue
 
     await notifyAdmin({
-      type: "LEAD_STUCK",
+      level: "WARNING",
       title: "Lead ohne Aktivität (>24h)",
-      body: `Conversation ${conv.id} hat seit ${conv.lastMessageAt?.toISOString() ?? "unbekannt"} keine Aktivität mehr. Letzte Aktivität: ${conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString("de-DE") : "—"}`,
+      message: `Conversation ${conv.id} hat seit ${conv.lastMessageAt?.toISOString() ?? "unbekannt"} keine Aktivität mehr. Letzte Aktivität: ${conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString("de-DE") : "—"}`,
       boardId: conv.boardId ?? undefined,
-      leadId: conv.id,
+      leadId: conv.leadId ?? undefined,
+      metadata: { conversationId: conv.id, lastMessageAt: conv.lastMessageAt },
     })
     notified++
   }

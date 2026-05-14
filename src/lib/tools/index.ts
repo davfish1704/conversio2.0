@@ -10,6 +10,10 @@ import { suggestChannelSwitchTool } from "./definitions/suggest-channel-switch"
 import { sendAssetTool } from "./definitions/send-asset"
 import { searchAssetsTool } from "./definitions/search-assets"
 
+// Sub-Agent signal tools (always available in AI states)
+import { handoffProposedTool }         from "./definitions/handoff_proposed"
+import { escalateToSupervisorTool }    from "./definitions/escalate_to_supervisor"
+
 // Legacy primitive tools (still usable by AI states that include them in availableTools)
 import { changStateLegacyTool, sendTextLegacyTool, storeMemoryLegacyTool, getHistoryLegacyTool } from "./definitions/legacy_tools"
 
@@ -21,6 +25,8 @@ registerTool(sendTemplateTool)
 registerTool(setLeadScoreTool)
 registerTool(sendAssetTool)
 registerTool(searchAssetsTool)
+registerTool(handoffProposedTool)
+registerTool(escalateToSupervisorTool)
 registerTool(changStateLegacyTool)
 registerTool(sendTextLegacyTool)
 registerTool(storeMemoryLegacyTool)

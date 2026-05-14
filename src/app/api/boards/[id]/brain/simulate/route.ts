@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
-import { runAgentLoop, type AgentLoopContext } from "@/lib/ai/tool-engine"
+import { aiRegistry } from "@/lib/ai/registry"
+import { sanitizeAIOutput } from "@/lib/ai/prompt/builder"
 import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
+import { buildSubAgentSystemPrompt } from "@/lib/agents/sub-agent-prompt-builder"
 
 export async function POST(
   req: NextRequest,
@@ -16,65 +18,68 @@ export async function POST(
   const body = await req.json()
   const { message, state, mission } = body
 
-  const brain = await prisma.boardBrain.findUnique({
-    where: { boardId: params.id },
-  })
+  const brain = await prisma.boardBrain.findUnique({ where: { boardId: params.id } })
 
-  const assets = await prisma.boardAsset.findMany({
-    where: { boardId: params.id, isActive: true },
-  })
-
-  const brainConfig = brain || {
-    id: "",
-    boardId: params.id,
+  const brainConfig = brain ?? {
     systemPrompt: "",
-    stylePrompt: "",
-    infoPrompt: "",
-    rulePrompt: "",
-    defaultModel: "gpt-4o-mini",
+    stylePrompt: "Professionell und freundlich",
+    infoPrompt:  "",
+    rulePrompt:  "",
+    language:    "de",
+    tone:        "friendly",
     temperature: 0.7,
-    maxTokens: 500,
-    language: "en",
-    tone: "friendly",
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    maxTokens:   500,
   }
 
-  const loopCtx: AgentLoopContext = {
-    conversationId: `simulate-${params.id}`,
-    boardId: params.id,
-    channel: "whatsapp",
-    userMessage: message || "Hello",
-    brain: brainConfig as any,
-    state: {
-      id: "simulate-state",
-      name: state || "New Lead",
-      mission: mission || null,
-      rules: null,
-      type: "AI",
-      nextStateId: null,
-      dataToCollect: [],
-      completionRule: null,
+  const systemPrompt = buildSubAgentSystemPrompt({
+    agentRole:         null,
+    agentGoal:         mission ?? null,
+    agentSystemPrompt: null,
+    handoffMode:       "LLM_ONLY",
+    stateName:         state ?? "Simulation",
+    stateMission:      mission ?? null,
+    stateRules:        null,
+    dataToCollect:     [],
+    brain: {
+      systemPrompt: brainConfig.systemPrompt,
+      stylePrompt:  brainConfig.stylePrompt,
+      infoPrompt:   brainConfig.infoPrompt,
+      rulePrompt:   brainConfig.rulePrompt,
+      language:     brainConfig.language,
+      tone:         brainConfig.tone,
     },
-    customData: {},
-    assets,
-  }
+    knowledge:           { rules: [], faqs: [], docs: [] },
+    memories:            [],
+    conversationSummary: null,
+    channel:             "whatsapp",
+    leadChannels:        [],
+    customData:          {},
+  })
 
   try {
-    const result = await runAgentLoop(loopCtx, { simulate: true })
+    const response = await aiRegistry.execute({
+      boardId:     params.id,
+      purpose:     "main",
+      messages:    [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: message ?? "Hallo" },
+      ],
+      temperature: brainConfig.temperature ?? 0.7,
+      maxTokens:   brainConfig.maxTokens   ?? 500,
+    })
 
-    const responseText = result.sentMessages.join("\n")
+    const text = sanitizeAIOutput(response.content ?? "")
 
     return NextResponse.json({
       response: {
-        text: responseText,
-        sentMessages: result.sentMessages,
-        stateTransitions: result.stateTransitions,
-        toolCallCount: result.toolCallCount,
+        text,
+        sentMessages:     [text],
+        stateTransitions: [],
+        toolCallCount:    response.toolCalls?.length ?? 0,
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error"
-    return NextResponse.json({ error: `KI nicht verfügbar: ${message}` }, { status: 503 })
+    const msg = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({ error: `KI nicht verfügbar: ${msg}` }, { status: 503 })
   }
 }

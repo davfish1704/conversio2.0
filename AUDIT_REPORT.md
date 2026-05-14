@@ -1,726 +1,997 @@
-# Conversio 2.0 — Audit Report
-*Generated: 2026-05-01*
-*Auditor: Claude Code with RuFlo Swarm (4 parallel agents + synthesis)*
+# AUDIT REPORT — CONVERSIO 2.0
+**Erstellt:** 2026-05-14  
+**Scope:** Read-only architecture audit zur Vorbereitung Sub-Agent Refactor  
+**Repo:** `/Users/tobroe/Desktop/conversio2.0`  
+**Methode:** Parallele Codebase-Analyse (Explore Agent + direkte File-Reads)  
+**Status:** Kein Code geändert, keine Migrations, keine Commits
 
 ---
 
-## Executive Summary
+## SECTION 1 — PRISMA SCHEMA INVENTORY
 
-Conversio 2.0 is a working product that delivers real value today — the core loop of inbound Telegram/WhatsApp message → AI agent response → state machine progression → outbound reply actually works. However, it is carrying three overlapping refactor layers that were never fully reconciled: (1) the original single-WA-account architecture, (2) the multi-board/multi-channel migration, and (3) the AI provider abstraction + job queue. The result is two live code paths processing the same inbound messages, two channel credential stores, three JSON columns doing the same job, and five dead models sitting in the schema. None of this is broken in production, but it would be catastrophic to maintain.
+**Provider:** PostgreSQL (Supabase/Neon), `directUrl` für Prisma-Bypass von PgBouncer  
+**Migrations gesamt:** 21
 
-**Top 3 strengths:**
-1. The job-queue architecture (`Job` table + Vercel Cron + `state-machine/executor.ts`) is well-designed, atomically correct (SELECT FOR UPDATE SKIP LOCKED), and clearly the right long-term path.
-2. The AI provider abstraction (`AIRegistry` + `PlatformAPIKey` + `AIProviderConfig`) is solid. It supports 5 providers, falls back gracefully, and respects per-board config — all the right design decisions.
-3. Auth is production-ready: NextAuth v5 beta with JWT sessions, bcrypt credentials, Google OAuth, Zod validation, rate limiting, and role-based access guards on all sensitive routes.
+### 1.1 Migration-History (letzten 7)
 
-**Top 3 critical issues:**
-1. **Dual execution path**: Every board is silently on either the legacy `agent.ts` path or the new `executor.ts` path depending on which webhook URL was registered. The new path has features (off-mission detection, escalation scheduling, summarization) the old path lacks entirely. There is no visibility into which boards are on which path.
-2. **WhatsAppAccount FK debt**: `Conversation.waAccountId` still FK-references `WhatsAppAccount`, forcing all Telegram and manual leads to create phantom `WhatsAppAccount` rows (`"telegram-bot-{boardId}"`, `"placeholder"`, `"wa-board-{boardId}"`). This hack is copy-pasted into at least 5 route handlers.
-3. **BrainLab is write-only at inference time**: `BrainDocument`, `BrainRule`, and `BrainFAQ` have full CRUD UIs and APIs, but the live inference stack never loads them into the model context. Only the `/simulate` endpoint reads them. Users storing knowledge base entries are getting zero benefit at runtime.
-
-**Recommended v3 strategy:**  
-Start with the `Job` + `executor.ts` + `AIRegistry` trinity as the architectural core — it is the cleanest part of the codebase. Replace `Conversation.waAccountId` with `Conversation.channelId → BoardChannel` and delete `WhatsAppAccount` entirely. Merge `customData`/`customFields`/`collectedFields` into a single `Json` column. Carry over all UI components except the builder, the legacy CRM view, and the WhatsApp global settings page — those can be rebuilt cleanly.
-
----
-
-## 1. Database Schema
-
-**Database:** Neon PostgreSQL, `eu-central-1`, pooled connection via `ep-summer-credit-alytern6-pooler.c-3.eu-central-1.aws.neon.tech`. Not reachable from local dev at time of audit (network timeout — production DB only). 10 migrations applied; schema is up to date per previous successful deploys.
-
-### Model Inventory
-
-| Model | Purpose | Usage Count | Status |
-|-------|---------|-------------|--------|
-| `User` | Auth identity, team membership, role | 13 | ✅ Used |
-| `Account` | NextAuth OAuth accounts table | 1 (debug route) | ✅ Used (framework-managed) |
-| `Session` | NextAuth JWT session records | 0 direct | ✅ Used (framework-managed) |
-| `VerificationToken` | Email verification | 0 direct | ✅ Used (framework-managed) |
-| `Team` | Multi-tenant container for boards | implicit | ✅ Used |
-| `TeamMember` | Team-level role membership | 8+ | ✅ Used |
-| `WhatsAppAccount` | Legacy WA channel + phantom FK bridge for TG/manual | 17 | ⚠️ Conflicting |
-| `Conversation` | Lead + conversation combined (the "Lead" model) | 81 | ✅ Used |
-| `Message` | Individual inbound/outbound messages | 30+ | ✅ Used |
-| `Board` | Pipeline/flow definition | 30+ | ✅ Used |
-| `BoardMember` | Board-level access control | 5+ | ✅ Used |
-| `State` | Pipeline stage with AI config and escalation rules | 20+ | ✅ Used |
-| `BoardBrain` | Per-board AI persona (prompts, defaults) | 4 | ✅ Used |
-| `BoardAsset` | Knowledge base files/snippets for AI context | 6 | ✅ Used |
-| `BoardChannel` | Per-board multichannel config (TG/WA/IG) | 12 | ✅ Used |
-| `BrainDocument` | RAG documents — CRUD works, not fed to inference | 2 (API only) | ⚠️ Write-only at inference |
-| `BrainRule` | Guardrails — CRUD works, not fed to inference | 2 (API only) | ⚠️ Write-only at inference |
-| `BrainFAQ` | FAQ pairs — CRUD works, not fed to inference | 2 (API only) | ⚠️ Write-only at inference |
-| `StageTransition` | Transition rules between states | 0 | ❌ Unused — dead weight |
-| `AdminReport` | Operational alerts with status/type enums | 10 | ✅ Used |
-| `AdminNotification` | Real-time escalation notifications | 4 | ⚠️ Partially Used |
-| `ExecutionLog` | Per-conversation AI execution audit trail | 6 | ✅ Used |
-| `ConversationMemory` | K/V store per conversation for AI memory | 4 | ✅ Used |
-| `ToolCallLog` | Tool invocation audit log | 1 (write only) | ⚠️ Write-only, no consumer |
-| `AIProviderConfig` | Per-board provider/model override | 0 direct (via registry) | ✅ Used |
-| `PlatformAPIKey` | Encrypted global AI provider API keys | 4 | ✅ Used |
-| `Job` | Background job queue | 4 | ✅ Used |
-| `Workflow` | Automation trigger definitions | 0 | ❌ Unused — dead weight |
-| `ApiToken` | Team-level service tokens | 0 | ❌ Unused — dead weight |
-
-### Critical Analysis
-
-#### WhatsAppAccount vs BoardChannel — The Canonical Split Problem
-
-`WhatsAppAccount` is the original team-scoped channel model. `BoardChannel` (added in migration `20260501061121`) is the intended board-scoped replacement. They coexist in a broken half-migration state:
-
-- `Conversation.waAccountId` is still a nullable FK to `WhatsAppAccount`. There is **no FK to `BoardChannel` anywhere**.
-- To satisfy this FK for non-WA leads, at least 5 route handlers create phantom `WhatsAppAccount` rows with synthetic phone numbers (`"telegram-bot-{boardId}"`, `"placeholder"`, `"wa-board-{boardId}"`). This is copy-pasted code with inline comments acknowledging the hack.
-- The new `/api/boards/[id]/channels` route writes to `BoardChannel` for actual credentials. The legacy `/api/whatsapp/connect` route still writes to `WhatsAppAccount` (with the access token stored **in plain text** in `accessTokenEncrypted` — the old route never calls `encrypt()`).
-- Two routes now handle each channel: `whatsapp/webhook/[boardId]` (new) and `webhook/whatsapp` (old global); `telegram/webhook/[boardId]` (new) and `webhook/telegram` (old global). Both routes in each pair are live.
-
-**Verdict**: Neither model can be removed without a migration. Both must be maintained in parallel until `Conversation.waAccountId` is dropped and replaced with `Conversation.channelId → BoardChannel`.
-
-#### Conversation — Doing Double Duty as Lead
-
-There is no `Lead` model. `Conversation` IS the Lead. Evidence:
-- API routes at `/api/boards/[id]/leads` and `/api/leads/[leadId]/telegram-invite` both query `prisma.conversation`.
-- UI components reference variables named `lead`/`leadId` pointing to `conversation.id`.
-- The model carries both CRM fields (`leadScore`, `tags`, `source`, `customData`) and messaging fields (`customerPhone`, `lastMessageAt`, `messages[]`, `waAccountId`).
-- **Three overlapping JSON columns for the same concept:**
-  - `customFields` (nullable Json) — legacy CRM overhaul field
-  - `customData` (Json, default `{}`) — new multichannel/dynamic fields
-  - `collectedFields` (Json array, default `[]`) — state machine field collection
-  - `LeadDrawer.tsx` reads them in a fallback chain: `customData || customFields || {}`. `/api/conversations/[id]/fields` dual-writes to both `customFields` and `customData` with an acknowledged comment.
-
-#### BrainDocument / BrainRule / BrainFAQ — Write-Only at Inference
-
-All three have functioning CRUD routes and UI. However, `src/lib/ai/tool-engine.ts:runAgentLoop()` loads `BoardBrain` and `BoardAsset` for AI context, but never loads `BrainDocument`, `BrainRule`, or `BrainFAQ`. Only the `/api/boards/[id]/brain/simulate` endpoint reads them. In production, data stored in these tables never reaches the model context window.
-
-#### Dead Models
-
-- **`StageTransition`**: Zero usages anywhere. The `State.transitionsFrom/transitionsTo` relations are never populated. Fully dead.
-- **`Workflow`**: Zero usages. Referenced only as a TypeScript interface and a marketing string.
-- **`ApiToken`**: Zero usages. Team-level service tokens, never created or read.
-
-#### Other Field-Level Issues
-
-| Field | Issue |
-|-------|-------|
-| `Conversation.aiModel` | Default `"llama-3.1-8b-instant"`, never read at runtime (registry overrides it) |
-| `ToolCallLog` | Written once per tool call, never queried, no UI |
-| `AdminNotification` | No Prisma relation defined (has `boardId` but no `@@relation`), cannot be joined |
-| `AdminNotification` vs `AdminReport` | Two overlapping alert models serving the same purpose |
-| `Job.leadId` field + index | Written but never queried (`@@index([leadId])` is dead) |
-| `Job.status` | Plain `String`, not a Prisma enum — no DB-level constraint |
-| `Board.adminStatus` / `Board.ownerStatus` | Plain `String` fields, should be enums; enforced only in Telegram webhook |
-
-### Migration Summary
-
-| Migration ID | What It Added | Dead Weight Introduced |
-|---|---|---|
-| `0_init` | Core auth, WA, Conversation, Team | — |
-| `20260419023558_crm_overhaul` | Board, State, BoardBrain, BoardAsset, Workflow, ApiToken | Workflow, ApiToken |
-| `20260421034018_add_brainlab_and_transitions` | BrainDocument, BrainRule, BrainFAQ, StageTransition | StageTransition (100% dead) |
-| `20260422093457_add_freeze_ai_channel` | Conversation.frozen*, channel, externalId, aiModel | aiModel (never read) |
-| `20260427101658_add_conversation_memory` | ConversationMemory | — |
-| `20260501061121_multichannel_dynamic_fields` | BoardChannel, AdminNotification, ToolCallLog, customData, collectedFields | ToolCallLog (write-only) |
-| `20260501084730_provider_config` | AIProviderConfig, PlatformAPIKey | — |
-| `20260501092837_phase3_job_queue_and_memory` | Job, conversationSummary*, State escalation fields | — |
-
----
-
-## 2. API Routes
-
-### Full Route Table
-
-| # | Path | Methods | Purpose | Auth | Status |
-|---|------|---------|---------|------|--------|
-| 1 | `/api/auth/[...nextauth]` | GET, POST | NextAuth session handler | N/A | ✅ |
-| 2 | `/api/auth/signup` | POST | Register with email/bcrypt | Public | ✅ |
-| 3 | `/api/health` | GET | Ping endpoint | Public | ✅ |
-| 4 | `/api/debug` | GET | Diagnostics (ADMIN only) | ADMIN role | ✅ |
-| 5 | `/api/user` | GET, PATCH | Read/update own profile | Session | ✅ |
-| 6 | `/api/boards` | GET, POST | List/create boards | Session | ✅ |
-| 7 | `/api/boards/[id]` | GET, PUT, DELETE | Single board CRUD | Session | ✅ |
-| 8 | `/api/boards/[id]/states` | GET, POST, PUT, DELETE | Pipeline states CRUD | BoardMember | ✅ |
-| 9 | `/api/boards/[id]/states/bulk` | POST | Batch create states | BoardMember | ✅ |
-| 10 | `/api/boards/[id]/pipeline` | GET | Kanban view data | BoardMember | ✅ |
-| 11 | `/api/boards/[id]/leads` | POST | Create lead (multi-channel) | BoardMember | ✅ |
-| 12 | `/api/boards/[id]/leads/import` | POST | Bulk CSV import | BoardMember | ⚠️ Hardcodes `"placeholder"` phone |
-| 13 | `/api/boards/[id]/brain` | GET, PUT | BrainLab config CRUD | BoardMember | ✅ |
-| 14 | `/api/boards/[id]/brain/simulate` | POST | AI loop simulation (no channel send) | BoardMember | ✅ |
-| 15 | `/api/boards/[id]/brain/rules` | GET, POST | BrainRule CRUD | BoardMember | ✅ |
-| 16 | `/api/boards/[id]/brain/faqs` | GET, POST | BrainFAQ CRUD | BoardMember | ✅ |
-| 17 | `/api/boards/[id]/brain/documents` | GET, POST | BrainDocument CRUD | BoardMember | ✅ |
-| 18 | `/api/boards/[id]/assets` | GET, POST | BoardAsset CRUD with Zod | BoardMember | ✅ |
-| 19 | `/api/boards/[id]/fields` | GET, PATCH | Field defs from `State.fieldDefinitions` (old path) | BoardMember | ⚠️ Superseded by `/custom-fields` |
-| 20 | `/api/boards/[id]/custom-fields` | GET, PUT | Field defs from `Board.boardCustomFields` (new path) | GET: session only ⚠️ | ⚠️ GET missing board access check |
-| 21 | `/api/boards/[id]/custom-fields/generate` | POST | AI-generate field defs from state missions | BoardMember | ⚠️ Uses deprecated `groqChat` directly |
-| 22 | `/api/boards/[id]/channels` | GET, POST | Connect/disconnect TG+WA+IG per board | BoardMember | ✅ |
-| 23 | `/api/boards/[id]/ai-config` | GET, PUT | Per-board AI provider config | BoardMember | ✅ |
-| 24 | `/api/conversations` | GET | List conversations across boards | Session | ✅ |
-| 25 | `/api/conversations/stats` | GET | Dashboard KPIs | Session | ✅ |
-| 26 | `/api/conversations/[id]/messages` | GET, POST | Messages CRUD | Ownership check | ✅ |
-| 27 | `/api/conversations/[id]/state` | PATCH | Move to new state | Inline board check | ✅ |
-| 28 | `/api/conversations/[id]/fields` | PATCH | Update custom fields (dual-write) | Inline board check | ✅ |
-| 29 | `/api/conversations/[id]/ai` | PATCH | Toggle aiEnabled flag | Ownership check | ✅ |
-| 30 | `/api/conversations/[id]/freeze` | PATCH | Freeze conversation | Ownership check | ✅ |
-| 31 | `/api/crm/pipeline` | GET, PATCH | Kanban pipeline + drag-drop state change | Session | ✅ |
-| 32 | `/api/dashboard/stats` | GET | Extended analytics with series data | Session | ✅ |
-| 33 | `/api/ai/chat` | POST | Multi-mode AI (uses registry) | Session + rate limit | ✅ |
-| 34 | `/api/ai/generate-flow` | POST | AI generates flow states | Session | ⚠️ Uses deprecated `groqChat` |
-| 35 | `/api/ai/generate-landing` | POST | VSL landing page generation | Session + rate limit | ⚠️ Uses deprecated `groqChat` |
-| 36 | `/api/meta/leads` | GET | Meta Lead Import | Session | ❌ Returns 501 (stub) |
-| 37 | `/api/leads/[leadId]/telegram-invite` | GET | Generate Telegram deep link | Session + board check | ✅ |
-| 38 | `/api/notifications` | GET, PATCH | AdminNotification CRUD | Session (no scope check ⚠️) | ⚠️ Missing ownership scope |
-| 39 | `/api/reports` | GET, POST, PUT | User-scoped AdminReport CRUD | Session | ✅ |
-| 40 | `/api/admin/reports` | GET | All reports (ADMIN only) | ADMIN role | ✅ |
-| 41 | `/api/admin/reports/[id]` | PUT, DELETE | Resolve/delete report | ADMIN role | ✅ |
-| 42 | `/api/admin/scan` | POST | Scan for stuck conversations | ADMIN role | ⚠️ LOOP false-positive logic |
-| 43 | `/api/admin/platform-keys` | GET, POST, DELETE | Encrypted AI provider key CRUD | ADMIN role | ✅ |
-| 44 | `/api/team` | GET | Team info + members | Session | ✅ |
-| 45 | `/api/team/invite` | POST | Add user to team by email | Session | ✅ |
-| 46 | `/api/team/members/[id]` | PATCH, DELETE | Update/remove team member | Session | ✅ |
-| 47 | `/api/integrations` | GET | Integration status check | Session | ⚠️ Google Calendar hardcoded false |
-| 48 | `/api/integrations/nango` | GET | Nango OAuth integrations | Session | ✅ |
-| 49 | `/api/cron/process-jobs` | POST | Job queue runner (Vercel Cron, `* * * * *`) | `CRON_SECRET` (optional in dev) | ✅ |
-| 50 | `/api/telegram/webhook/[boardId]` | POST | Board-scoped Telegram webhook (**canonical**) | HMAC secret token | ✅ |
-| 51 | `/api/webhook/telegram` | POST | Global Telegram webhook (**legacy, still live**) | Secret token only | ⚠️ Bypasses job queue |
-| 52 | `/api/webhook/whatsapp` | GET, POST | Global WA webhook (**legacy, still live**) | x-hub-signature-256 | ⚠️ Bypasses job queue |
-| 53 | `/api/whatsapp/webhook/[boardId]` | GET, POST | Board-scoped WA webhook (**canonical**) | Verify token (GET); **no HMAC on POST** ⚠️ | ⚠️ Missing HMAC verification |
-| 54 | `/api/whatsapp/send` | POST | Send WA message via Meta v18.0 | Session + rate limit | ⚠️ API version hardcoded |
-| 55 | `/api/whatsapp/ai-send` | POST | AI-generate + send WA message | Session + rate limit | ⚠️ Uses deprecated `groqChat` |
-| 56 | `/api/whatsapp/connect` | POST | Connect global WA account (old path, token stored plain text ⚠️) | Session | ⚠️ Superseded + security issue |
-| 57 | `/api/whatsapp/account` | GET, PATCH | **410 Gone** (tombstoned correctly) | None | ✅ |
-| 58 | `/api/whatsapp/disconnect` | POST | **410 Gone** (tombstoned correctly) | None | ✅ |
-
-### Key Issues
-
-1. **Webhook duplication with divergent behavior**: Two live webhook handlers per channel. The legacy routes (`/api/webhook/telegram`, `/api/webhook/whatsapp`) call `processAgentResponse()` synchronously in the request. The new routes (`/api/telegram/webhook/[boardId]`, `/api/whatsapp/webhook/[boardId]`) enqueue a job. A board on the legacy routes silently misses off-mission detection, escalation, summarization, and board-level status checks.
-
-2. **Missing HMAC on new WhatsApp POST webhook**: `/api/whatsapp/webhook/[boardId]` verifies the Meta `hub.verify_token` on GET but performs no `x-hub-signature-256` signature check on POST. The legacy route DID have this check. This is a security regression — anyone can POST fake webhook events to this endpoint.
-
-3. **`/api/notifications` has no board scope check**: An authenticated user can read and resolve `AdminNotification` records belonging to any board, not just their own.
-
-4. **`/api/whatsapp/connect` stores token plain text**: Old connect route writes `body.accessToken` directly into `accessTokenEncrypted` without calling `encrypt()`. If any token was saved via this route it is stored as plaintext in the DB.
-
-5. **Three routes still on deprecated `groqChat`**: `generate-flow`, `generate-landing`, `ai-send`, and `custom-fields/generate` bypass `AIRegistry` and `PlatformAPIKey` entirely. They always use the env var `GROQ_API_KEY`, regardless of per-board AI config.
-
----
-
-## 3. Library Code
-
-### File Inventory Summary
-
-| Path | Lines | Status |
-|------|-------|--------|
-| `lib/agent.ts` | 221 | ⚠️ Legacy entry point — superseded by executor.ts |
-| `lib/ai-service.ts` | 71 | ✅ Thin adapter (generateAIResponse → registry) |
-| `lib/ai/engine.ts` (SmartDummyAI) | 131 | ❌ Dead — zero imports |
-| `lib/ai/groq-client.ts` | 157 | ⚠️ Deprecated shim — header says "do not add callers" but 4 routes still use it |
-| `lib/ai/prompt-builder.ts` | 95 | ⚠️ Used only by generateAIResponse fallback; tool-engine uses its own prompt builder |
-| `lib/ai/registry.ts` | 249 | ✅ Correct architectural core |
-| `lib/ai/tool-engine.ts` | 340 | ✅ Core AI loop with tool calling |
-| `lib/ai/providers/*.ts` (5 files) | ~100 each | ✅ Clean provider adapters |
-| `lib/ai/tools.ts` | 419 | ⚠️ Legacy tool system, active for boards with empty `availableTools` |
-| `lib/auth-helpers.ts` | 101 | ✅ Clean, well-used |
-| `lib/conversation-memory.ts` | 55 | ✅ Clean — used by job runner only |
-| `lib/crypto/secrets.ts` | 39 | ⚠️ Fallback key is hardcoded string `"conversio-dev-key-placeholder-32c"` with no prod assertion |
-| `lib/db.ts` | 12 | ✅ |
-| `lib/features.ts` | 13 | ✅ |
-| `lib/jobs/enqueue.ts` | 32 | ✅ Clean |
-| `lib/jobs/runner.ts` | 147 | ✅ Atomic, correct |
-| `lib/messaging/dispatcher.ts` | 87 | ✅ Canonical outbound send |
-| `lib/messaging/telegram-invite.ts` | 27 | ✅ |
-| `lib/nango-client.ts` | 25 | ✅ |
-| `lib/notifications.ts` | 18 | ✅ |
-| `lib/rate-limit.ts` | 26 | ⚠️ In-memory Map — resets on cold start, not global across instances |
-| `lib/state-machine.ts` | 163 | ✅ Canonical low-level state ops |
-| `lib/state-machine/executor.ts` | 331 | ✅ New preferred orchestration layer |
-| `lib/telegram-sender.ts` | 72 | ❌ Dead — zero imports, uses global env token |
-| `lib/tools/registry.ts` | 59 | ✅ |
-| `lib/tools/index.ts` | 42 | ✅ |
-| `lib/tools/executor.ts` | 85 | ✅ |
-| `lib/tools/definitions/*.ts` (11 files) | varies | ✅ 5 live + 5 stubs + 1 legacy adapter |
-| `lib/translations.ts` | 1038 | ✅ Complete EN+DE coverage |
-
-### AI Call Trace — Inbound Message to Response
-
-There are **two active paths**. Which one a conversation takes depends entirely on which webhook URL was registered when the channel was connected:
-
-**Path A — Legacy (direct call, synchronous, no job queue)**
-```
-POST /api/webhook/telegram  OR  /api/webhook/whatsapp
-  → save Message + upsert Conversation
-  → agent.ts:processAgentResponse()
-      → state-machine.ts:getCurrentState()
-      → switch state.type:
-          AI → tool-engine.ts:runAgentLoop()
-                → ai/registry.ts:execute()  (correct, uses AIProviderConfig)
-                → if toolCalls: executeTool() [ai/tools.ts — legacy system A]
-          MESSAGE → static text
-          CONDITION → ai-service.ts:generateAIResponse()
-      → messaging/dispatcher.ts:sendMessage()
-```
-**Missing from Path A**: off-mission classification, low-confidence scoring, no-reply escalation scheduling, board adminStatus/ownerStatus checks, conversation summarization.
-
-**Path B — New (job queue, async, per minute via Vercel Cron)**
-```
-POST /api/telegram/webhook/[boardId]  OR  /api/whatsapp/webhook/[boardId]
-  → save Message + upsert Conversation
-  → jobs/enqueue.ts:enqueueJob()  →  Job table
-  → return 200 immediately
-
-POST /api/cron/process-jobs  (Vercel Cron, every minute)
-  → jobs/runner.ts:processNextBatch(20)
-      → SELECT FOR UPDATE SKIP LOCKED
-      → state-machine/executor.ts:executeStateForConversation()
-          → checks frozen, aiEnabled, board.adminStatus, board.ownerStatus
-          → maybeScheduleSummarization()
-          → switch state.type:
-              AI → tool-engine.ts:runAgentLoop()
-                    → ai/registry.ts:execute()
-                    → if toolCalls: tools/executor.ts:executeToolCalls() [new System B]
-                    → classifyOffMission() + classifyLowConfidence()
-                    → enqueueJob("escalation_check") if noReply timeout configured
-              MESSAGE → dispatcher.ts:sendMessage()
-              WAIT → skip
-          → messaging/dispatcher.ts:sendMessage()
-```
-Path B is the correct architecture. Path A should be deprecated.
-
-### Dual Tool System
-
-Two parallel tool systems coexist inside `runAgentLoop()`:
-
-| | System A (Legacy) | System B (New) |
-|---|---|---|
-| Definitions | `ai/tools.ts:TOOL_DEFINITIONS` | `tools/registry.ts` seeded by `tools/index.ts` |
-| Executor | `ai/tools.ts:executeTool()` | `tools/executor.ts:executeToolCalls()` |
-| Logging | None | `ToolCallLog` DB write |
-| Timeout | None | 10-second per-tool |
-| Access control | None | `availableTools` filter |
-| Activation | When `state.availableTools` is empty | When `state.availableTools` has ≥1 entry |
-| Missing tools | — | `send_asset`, `search_assets` (System A only) |
-| Stub tools (registered but return 501) | — | `book_calendar`, `send_email`, `trigger_webhook`, `create_stripe_link`, `generate_pdf` |
-
-### Dead Code
-
-| File | Why Dead |
-|------|---------|
-| `src/lib/ai/engine.ts` (SmartDummyAI) | Zero imports anywhere |
-| `src/lib/telegram-sender.ts` | Zero imports; uses global `TELEGRAM_BOT_TOKEN` env var |
-| `groqChat()` / `groqChatWithTools()` exported functions | Marked deprecated, but still called from 4 routes |
-
-### Security Issues in Library Code
-
-- `lib/crypto/secrets.ts`: If `ENCRYPTION_KEY` env var is not set, falls back to hardcoded dev key `"conversio-dev-key-placeholder-32c"`. No runtime assertion prevents this in production.
-- `lib/rate-limit.ts`: Map is process-local. On Vercel with multiple warm instances, the 5/5min rate limit for login is per-instance, not global. Effective rate is `5 × num_instances`.
-
----
-
-## 4. Frontend Components
-
-**Totals**: 185 `.tsx`/`.ts` files in `src/`, 0 test files.
-
-### Major Components Status
-
-| Path | Purpose | Status |
-|------|---------|--------|
-| `components/boards/LeadDrawer.tsx` (728 lines) | Full lead detail: chat, custom fields, AI suggestion, freeze | ✅ Works |
-| `components/boards/LeadImportModal.tsx` (363 lines) | Import/create leads with channel picker (WA/TG/Manual) | ✅ Works |
-| `components/boards/PipelineBoard.tsx` | Kanban drag-and-drop using dnd-kit | ✅ Works |
-| `components/boards/LeadCard.tsx` | Compact lead card with channel icons, score, last message | ✅ Works |
-| `components/leads/TelegramInviteUI.tsx` | Invite link + QR panel for unreachable Telegram leads | ✅ Works |
-| `components/flow-builder/FlowBuilder.tsx` (262 lines) | State machine editor | ✅ Works |
-| `components/flow-builder/StateForm.tsx` (527 lines) | State edit form with all new escalation/behavior fields | ✅ Works |
-| `components/flow-builder/PromptGenerator.tsx` (296 lines) | AI-generated flow from text prompt | ✅ Works |
-| `components/crm/ConversioPipeline.tsx` | Legacy pipeline view (used by `/crm` page) | ⚠️ Visual only |
-| `components/builder/templates.tsx` (960 lines) | Visual template builder | ⚠️ Visual only — no backend |
-| `components/layout/TopNavigation.tsx` | App top nav | ✅ Works |
-| `components/ui/*` (14 files) | shadcn/ui primitives | ✅ Works |
-| `app/(dashboard)/boards/[id]/page.tsx` | Kanban pipeline (3-parallel-fetch, abort on unmount) | ✅ Works |
-| `app/(dashboard)/boards/[id]/settings/page.tsx` (592 lines) | Per-board: AI config, channel connect, custom fields | ✅ Works |
-| `app/(dashboard)/boards/[id]/brain/page.tsx` (590 lines) | BrainLab — all labels hardcoded English, no `t()` calls | ✅ Works, ❌ i18n gap |
-| `app/(dashboard)/dashboard/page.tsx` (462 lines) | Dashboard with recharts analytics | ✅ Works |
-| `app/(dashboard)/settings/page.tsx` | User settings — WhatsApp tab correctly removed | ✅ Works |
-| `app/(dashboard)/reports/page.tsx` (418 lines) | Analytics/reporting with recharts | ✅ Works |
-| `app/(dashboard)/whatsapp/page.tsx` | Legacy global WA settings — feature-flagged off | ⚠️ Deprecated |
-| `app/(dashboard)/telegram/` | Directory exists, **no page.tsx** | ❌ Empty scaffold |
-| `app/(dashboard)/crm/page.tsx` (291 lines) | Legacy CRM view | ⚠️ Duplicate of board pipeline |
-| `app/(dashboard)/builder/page.tsx` (1078 lines) | Standalone visual builder — no persistence | ⚠️ Visual only |
-
-### Specific Findings
-
-**`LeadDrawer.tsx`**: `TelegramInviteUI` is correctly integrated. Render condition: `lead.channel === "telegram" && !lead.externalId` — correct. Dynamic custom fields renderer is fully implemented with all types (text/phone/email/number/date/boolean/select/multiselect). **Bug**: the Notes `<textarea>` uses `defaultValue` (uncontrolled) with no `onBlur` save handler — edits are silently lost on drawer close.
-
-**`boards/[id]/page.tsx`**: The "Add Lead" button is **hard-disabled** with a `cursor-not-allowed` style and "coming soon" title. Add-lead functionality only works via the import modal. This is a regression from the original spec.
-
-**`StateForm.tsx`**: All new Phase 3 fields present — `behaviorMode` dropdown, 3 escalation checkboxes (`escalateOnLowConfidence`, `escalateOnOffMission`, `escalateOnNoReply`), `maxFollowups`, `followupAction`. Fully wired.
-
-**`app/(dashboard)/telegram/` directory**: Empty scaffold. No `page.tsx`. Nav links pointing to `/telegram` will 404.
-
-**i18n**: `brain/page.tsx` has zero `t()` calls — the only page that was never converted. All other reviewed pages have correct key coverage. `scripts/check-i18n.ts` is broken at runtime (`__dirname` is not defined in ES module scope) and cannot be used as a CI gate.
-
----
-
-## 5. Auth & Multi-Tenancy
-
-### Auth Setup
-
-| Property | Value |
-|----------|-------|
-| Library | NextAuth v5 (`next-auth@5.0.0-beta.31`) |
-| Session strategy | JWT (not DB sessions) |
-| Session maxAge | 30 days |
-| Login methods | Email/password (bcrypt) + Google OAuth |
-| Magic link | Not implemented |
-| User roles | `ADMIN`, `USER`, `AGENT` (UserRole enum) |
-| Board roles | `ADMIN`, `AGENT`, `VIEWER` (BoardRole enum) |
-| Team roles | `ADMIN`, `MEMBER`, `VIEWER` (Role enum) |
-
-The auth setup is solid. Three role systems exist in parallel (UserRole, BoardRole, TeamRole) which creates conceptual overhead but they serve different scopes.
-
-### Multi-Tenancy Model
-
-```
-User → (many) TeamMember → Team → (many) Board → (many) BoardMember → User
-```
-
-A user can belong to multiple teams and multiple boards. Boards are isolated by `BoardMember` checks in API routes. The helper `assertBoardMemberAccess(boardId, userId)` in `auth-helpers.ts` is used consistently across API routes.
-
-**Key issues:**
-
-1. **Middleware is completely disabled**: `src/middleware.ts` is a 5-line no-op (`return NextResponse.next()`, empty matcher `[]`). Route protection is enforced entirely by per-route `auth()` calls. This means any route without an `auth()` check is publicly accessible. The middleware was disabled in commit `d7078f2 fix: disable middleware completely` — likely to fix a deploy issue. No route-level protection baseline exists.
-
-2. **Auto-team creation on board create**: `/api/boards` creates a default team for a user if they have none. This is "convenient" but means every user with a board has a team, and the distinction between team and user becomes blurred in the UI.
-
-3. **No email verification**: Users can sign up with any email and immediately access the dashboard. `emailVerified` exists in the schema but is never set by the credentials flow.
-
-4. **Rate limit is instance-local**: The login brute-force protection is a process-local Map. On Vercel with multiple concurrent instances, it is not global.
-
-**Quality assessment:** ⚠️ Works but limited — sufficient for a pre-launch product with known users, not appropriate for public sign-up at scale.
-
----
-
-## 6. Configuration & Deploy
-
-### Environment Variables
-
-All keys referenced in code via `process.env.*`:
-
-| Variable | Required | Purpose | Notes |
-|----------|----------|---------|-------|
-| `DATABASE_URL` | ✅ Required | Prisma pooled connection | Neon PostgreSQL |
-| `DIRECT_URL` | ✅ Required | Prisma direct connection for migrations | Neon |
-| `NEXTAUTH_SECRET` | ✅ Required | JWT signing key | |
-| `NEXTAUTH_URL` | ✅ Required | App canonical URL | Used in webhook URL generation |
-| `ENCRYPTION_KEY` | ✅ Required | AES-256-GCM for DB token encryption | **Fallback to hardcoded dev key if unset** |
-| `GROQ_API_KEY` | ✅ Required (fallback) | Groq AI provider | Fallback when no PlatformAPIKey in DB |
-| `GOOGLE_CLIENT_ID` | Optional | Google OAuth | OAuth login disabled if unset |
-| `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth | |
-| `CRON_SECRET` | Optional | Vercel cron auth | **No check in dev; optional in prod** |
-| `META_ACCESS_TOKEN` | Optional | WhatsApp Cloud API outbound | Legacy global |
-| `META_APP_SECRET` | Optional | WhatsApp HMAC verification | Used only in old global webhook |
-| `META_PHONE_NUMBER_ID` | Optional | WA phone number | Legacy global |
-| `META_WEBHOOK_VERIFY_TOKEN` | Optional | WA webhook verify | Legacy global |
-| `TELEGRAM_BOT_TOKEN` | Optional | Global Telegram bot | Used only in dead `telegram-sender.ts` |
-| `TELEGRAM_WEBHOOK_SECRET` | Optional | Global Telegram webhook secret | Used only in old global webhook |
-| `OPENAI_API_KEY` | Optional (fallback) | OpenAI provider | Fallback if no PlatformAPIKey |
-| `OPENROUTER_API_KEY` | Optional (fallback) | OpenRouter | Fallback if no PlatformAPIKey |
-| `DEEPSEEK_API_KEY` | Optional (fallback) | DeepSeek | Fallback if no PlatformAPIKey |
-| `ANTHROPIC_API_KEY` | Optional (fallback) | Anthropic | Fallback if no PlatformAPIKey |
-| `NANGO_SECRET_KEY` | Optional | Nango OAuth | Graceful if missing |
-| `NANGO_HOST` | Optional | Nango host | |
-| `NEXT_PUBLIC_FEATURE_SIGNUP` | Optional | Feature flag: signup page | |
-| `NEXT_PUBLIC_FEATURE_WHATSAPP` | Optional | Feature flag: legacy WA page | |
-| `NEXT_PUBLIC_FEATURE_BUILDER` | Optional | Feature flag: visual builder | |
-
-### Deploy Configuration
-
-| Property | Value |
-|----------|-------|
-| Platform | Vercel |
-| Config file | `vercel.json` (minimal — only cron defined) |
-| Cron jobs | `POST /api/cron/process-jobs` every minute (`* * * * *`) |
-| Database | Neon PostgreSQL, eu-central-1, pooled + direct URL |
-| Vercel CLI version | `51.7.0` (outdated — current is `53.0.1`) |
-
-### External Services
-
-| Service | Used for | Status |
-|---------|---------|--------|
-| Neon PostgreSQL | Primary DB | ✅ Active |
-| Groq | Primary AI provider | ✅ Active |
-| OpenRouter | Fallback AI | ✅ Available |
-| OpenAI | Fallback AI | ✅ Available |
-| DeepSeek | Fallback AI | ✅ Available |
-| Anthropic | Fallback AI | ✅ Available |
-| Meta WhatsApp Cloud API v18.0 | WA send (hardcoded version) | ⚠️ Version pinned |
-| Telegram Bot API | TG webhook + send | ✅ Active |
-| Google OAuth | Social login | ✅ Available |
-| Nango | OAuth token broker | Optional — graceful fallback |
-| Stripe | Not configured | ❌ Stub tools reference it, no keys |
-
----
-
-## 7. End-to-End Smoke Test Results
-
-> ⚠️ **Note**: The production database is at Neon (eu-central-1) and is not reachable from local dev at time of audit. The local dev server was not started. Smoke test results are based on code analysis, not live UI testing. Items marked ❌ DID NOT TEST are due to this constraint.
-
-| Journey | Result | Notes |
-|---------|--------|-------|
-| 1. Sign up new user | 🔧 Partial | Code path is complete. No email verification. Feature flag `NEXT_PUBLIC_FEATURE_SIGNUP` gates the page. |
-| 2. Login existing user | ✅ Works | bcrypt + rate limit + JWT. Google OAuth also wired. |
-| 3. Create board | ✅ Works | Auto-creates team if none exists. Board immediately accessible. |
-| 4. Connect Telegram bot in Board Settings | ✅ Works | `POST /api/boards/[id]/channels` with `action: "connect-telegram"` calls `getMe`, sets webhook, upserts `BoardChannel`. Webhook URL displayed in UI. |
-| 5. Connect WhatsApp in Board Settings | ✅ Works | Same pattern with `action: "connect-whatsapp"`. No real Meta credentials needed to save the config. |
-| 6. Send Telegram message to bot → Lead appears | ✅ Works (Path B) | If board was registered at `/api/telegram/webhook/[boardId]`. Lead is created as `Conversation` with `channel: "telegram"`. |
-| 7. Bot AI response | ✅ Works (Path B) | Job queued, cron processes within 60 seconds, `runAgentLoop()` executes, `dispatcher.sendMessage()` sends reply. |
-| 8. Manual lead creation — WhatsApp | ✅ Works | Phone required, `WhatsAppAccount` bridge created. |
-| 8. Manual lead creation — Telegram | ✅ Works | No phone required, `externalId: null`, invite flow shown in drawer. |
-| 8. Manual lead creation — Manual | ✅ Works | Notes only. |
-| 9. State machine progression | ✅ Works (Path B) | `advance_state` tool triggers `transitionState()`. Leads move through states. |
-| 10. BrainLab configure + AI responds | ⚠️ Partial | `BoardBrain` prompts are loaded into AI context. But `BrainDocument`/`BrainRule`/`BrainFAQ` entries are NOT fed into live inference. |
-| Custom fields in drawer | ✅ Works | Type-aware renderer loads from `boardCustomFields`, reads/writes `customData`. |
-| Flow builder with new state fields | ✅ Works | `behaviorMode`, escalation toggles, `maxFollowups`, `followupAction` all present and saved to DB. |
-
----
-
-## 8. Code Quality Metrics
-
-```
-TypeScript errors (npx tsc --noEmit): 0
-
-Lint errors (next lint): 0
-
-Total source files (.ts/.tsx): 185
-Test files (.test.ts/.test.tsx): 0
-
-Total source lines: ~23,145
-```
-
-**Largest files (complexity hotspots):**
-
-| File | Lines |
+| Name | Datum |
 |------|-------|
-| `app/(dashboard)/builder/page.tsx` | 1,078 |
-| `lib/translations.ts` | 1,038 |
-| `components/builder/templates.tsx` | 960 |
-| `components/boards/LeadDrawer.tsx` | 728 |
-| `app/(dashboard)/boards/[id]/settings/page.tsx` | 592 |
-| `app/(dashboard)/boards/[id]/brain/page.tsx` | 590 |
-| `components/flow-builder/StateForm.tsx` | 527 |
-| `app/(dashboard)/dashboard/page.tsx` | 462 |
-| `lib/ai/tools.ts` | 419 |
-| `app/(dashboard)/reports/page.tsx` | 418 |
-| `lib/ai/tool-engine.ts` | 340 |
-| `lib/state-machine/executor.ts` | 331 |
+| `20260501084730_provider_config` | 2026-05-01 |
+| `20260501092837_phase3_job_queue_and_memory` | 2026-05-01 |
+| `20260502140000_add_missing_columns` | 2026-05-02 |
+| `20260502150000_sync_all_drift` | 2026-05-02 |
+| `20260502160000_add_board_acquisition_invites` | 2026-05-02 |
+| `20260508000000_add_usage_log` | 2026-05-08 |
+| `20260511000000_add_asset_management` | 2026-05-11 |
 
-**Duplicate function patterns:**
-
-```
-processAgentResponse()  → agent.ts:17    (legacy path)
-executeStateForConversation()  → state-machine/executor.ts  (new path)
-// Two implementations of the same thing
-
-groqChat()  → ai/groq-client.ts:44    (deprecated, 4 callers remain)
-groqChatWithTools()  → ai/groq-client.ts:68  (deprecated)
-
-buildPrompt()  → ai/prompt-builder.ts  (used only by generateAIResponse fallback)
-buildSystemPrompt()  → inline in tool-engine.ts  (used by runAgentLoop)
-// Two prompt builders that diverged
-```
-
-**Single TODO in entire codebase:**
-```
-src/app/api/meta/leads/route.ts:8: // TODO: Meta Lead Import — noch nicht implementiert.
-```
-
-**Zero test files** — no unit tests, no integration tests, no e2e tests exist.
+⚠️ **Sonderdatei:** `MANUAL_cleanup_duplicate_pending_invites.sql` liegt in `prisma/migrations/` — handgeschriebenes SQL ohne offizielle Prisma-Migration. Weist auf vergangenen Datendrift hin.
 
 ---
 
-## 9. Dependencies
+### 1.2 Models
 
-### Full Dependency Analysis
+#### `User` (users)
 
-| Package | Version | Category | Assessment |
-|---------|---------|----------|------------|
-| `next` | 14.2.35 (latest: 16.2.4) | 🟢 Core | 2 major versions behind |
-| `react` / `react-dom` | 18.3.1 (latest: 19.2.x) | 🟢 Core | 1 major version behind |
-| `prisma` / `@prisma/client` | 6.19.3 (latest: 7.8.0) | 🟢 Core | 1 major version behind |
-| `next-auth` | 5.0.0-beta.31 | 🟢 Core | **Beta version in production** |
-| `typescript` | 5.9.3 (latest: 6.0.3) | 🟢 Core | Near latest |
-| `tailwindcss` | 3.4.19 (latest: 4.2.4) | 🟢 Core | 1 major version behind |
-| `zod` | 3.25.76 (latest: 4.4.1) | 🟢 Core | 1 major version behind |
-| `@dnd-kit/core` | 6.3.1 | 🟢 Core | Used for Kanban drag-drop |
-| `openai` | 6.34.0 | 🟢 Core | Used as SDK compat layer for all providers |
-| `bcryptjs` | 3.0.3 | 🟢 Core | Password hashing |
-| `lucide-react` | 1.9.0 (latest: 1.14.0) | 🟡 Used | Minor update available |
-| `recharts` | 3.8.1 | 🟡 Used | Dashboard charts |
-| `framer-motion` | 12.38.0 | 🟡 Used | Some animations |
-| `@nangohq/node` | 0.70.1 | 🟡 Used | Only at `/api/integrations/nango` |
-| `class-variance-authority` | 0.7.1 | 🟡 Used | shadcn/ui helper |
-| `tailwind-merge` | 3.5.0 | 🟡 Used | `cn()` utility |
-| `@radix-ui/*` (7 packages) | various | 🟡 Used | UI primitives for shadcn |
-| `vitest` | 4.1.5 | 🟡 Dev | Installed but zero test files |
-| `pg` | 8.20.0 | 🔴 Likely unused | Direct postgres driver — Prisma handles DB, `pg` may be a dep artifact |
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| email | String | unique |
+| name | String? | |
+| googleId | String? | unique |
+| image | String? | |
+| password | String? | |
+| emailVerified | DateTime? | |
+| verifyToken | String? | |
+| role | UserRole | default: USER |
+| timezone | String | default: "Europe/Berlin" |
+| language | String | default: "de" |
+| createdAt, updatedAt | DateTime | |
 
-**Notable version concerns:**
-- `next-auth@5.0.0-beta.31` is a **beta package in production**. The stable v4.x line exists and the v5 beta has had breaking changes between betas.
-- `next@14.2.35` vs latest `16.2.4` — two major versions behind. Upgrading will require App Router API changes.
-- `prisma@6` vs latest `7.8.0` — a full major behind; Prisma 7 has query API changes.
-- `tailwindcss@3` vs `4.x` — major config format change in v4.
-- `zod@3` vs `4.x` — breaking API changes in v4.
-
-**`@nangohq/node`**: This is a non-trivial dependency for a single optional route. If the Nango integration is not a core product feature, this can be dropped.
+Relations: `accounts`, `sessions`, `memberships (TeamMember)`, `ownedTeams`, `boardMembers`, `messages`, `assignedLeads`
 
 ---
 
-## 10. Carry-Over Recommendations
+#### `Team` (teams)
 
-### ✅ Carry Over (As-Is or Lightly Adapted)
-
-| Item | Justification |
-|------|---------------|
-| **`src/auth.ts` (NextAuth v5 config)** | Solid: JWT strategy, bcrypt, Google OAuth, Zod validation, rate limit. Carry entire file, upgrade to stable NextAuth v5 release when available. |
-| **`User` / `Team` / `TeamMember` / `BoardMember` models** | Multi-tenancy model is correct. Keep the schema, clean up the role enum duplication (3 role enums → 2). |
-| **`src/lib/ai/registry.ts` + `providers/*.ts`** | Best-designed subsystem in the codebase. Provider abstraction, fallback logic, DB key lookup — carry verbatim. |
-| **`src/lib/ai/tool-engine.ts:runAgentLoop()`** | The core AI loop with tool calling is correct. Extract it cleanly from the executor context. |
-| **`src/lib/jobs/` (enqueue + runner)** | Atomic job queue with proper claiming is production-proven. Keep exactly. |
-| **`src/lib/state-machine/executor.ts`** | The new orchestration layer is the right design. Carry over, deprecate `agent.ts`. |
-| **`src/lib/messaging/dispatcher.ts`** | Clean unified outbound send. Carry as-is. |
-| **`src/lib/auth-helpers.ts`** | `assertBoardMemberAccess()` pattern is well-designed and consistently used. |
-| **`src/lib/crypto/secrets.ts`** | AES-256-GCM is correct. Add a runtime assertion that `ENCRYPTION_KEY` is set in non-dev environments. |
-| **`PlatformAPIKey` model** | Correct approach — admin-managed encrypted provider keys as DB rows. |
-| **`AIProviderConfig` model** | Per-board AI config is the right design. |
-| **All `components/boards/` components** | LeadDrawer, LeadCard, PipelineBoard, KanbanColumn, LeadImportModal — all functional and well-implemented. |
-| **`components/flow-builder/` (FlowBuilder, StateForm, StateCard, PromptGenerator)** | Complete and working with all new fields. |
-| **`components/leads/TelegramInviteUI.tsx`** | Correct pattern for the deep-link invite flow. |
-| **`src/lib/translations.ts`** | Nearly complete EN+DE coverage. Extract to standard JSON format in v3. |
-| **`src/app/(dashboard)/` pages** (dashboard, boards, settings, reports, team, brain, flow, assets) | All working. Copy with cleanup. |
-| **`vercel.json` cron config** | One-liner that is correct. Keep. |
-
-### 🔧 Refactor for v3
-
-| Item | What to Change |
-|------|---------------|
-| **`Conversation` model** | Split into `Lead` (CRM data: name, phone, tags, score, source, customData, channel) and `Conversation` (messaging: messages, state, lastMessageAt). Or keep combined but delete `customFields` and `collectedFields` — keep only `customData`. |
-| **Channel model** | Delete `WhatsAppAccount` entirely. Replace `Conversation.waAccountId` FK with `Conversation.channelId → BoardChannel`. `BoardChannel` becomes the sole channel credential store. |
-| **BrainLab knowledge base** | `BrainDocument`, `BrainRule`, `BrainFAQ` are the right concepts but need to be wired into `runAgentLoop()`. In v3, load them into the system prompt context block. |
-| **Webhook routing** | One webhook URL per channel per board. Delete global legacy webhooks (`/api/webhook/telegram`, `/api/webhook/whatsapp`). Add HMAC verification to `/api/whatsapp/webhook/[boardId]`. |
-| **Tool system** | Delete `ai/tools.ts` (System A). Fully migrate to `tools/registry.ts` (System B). Add `send_asset` and `search_assets` to System B. Remove stub tools from AI prompt context or implement them. |
-| **`agent.ts`** | Delete once all boards are on the new webhook URLs. All orchestration should go through `executor.ts`. |
-| **`ai/prompt-builder.ts`** | Merge with `buildSystemPrompt()` in `tool-engine.ts`. One prompt builder for the whole app. |
-| **Rate limiting** | Replace in-memory Map with Redis or Vercel KV-backed rate limiter. |
-| **`check-i18n.ts`** | Fix `__dirname` → `import.meta.url` + `fileURLToPath`. Add to `npm run build` pre-check. |
-| **`/api/notifications`** | Add board membership scope check. |
-| **`StageTransition` / `Workflow` / `ApiToken` models** | If these features are planned for v3, design them from scratch with real implementations. If not, don't include them at all. |
-| **`Board.adminStatus` / `Board.ownerStatus`** | Convert to DB enums. |
-| **`Job.status`** | Convert to DB enum. |
-| **`AdminNotification` vs `AdminReport`** | Consolidate into a single `Alert` model with a `type` enum. |
-
-### 🗑️ Leave Behind
-
-| Item | Why |
-|------|-----|
-| **`src/lib/ai/engine.ts` (SmartDummyAI)** | Zero imports. Pre-registry mock, fully superseded. |
-| **`src/lib/telegram-sender.ts`** | Zero imports. Uses global env token — predates multi-board. |
-| **Legacy global webhooks** (`/api/webhook/telegram`, `/api/webhook/whatsapp`) | Bypass job queue, miss all new features, have no board scoping. |
-| **`/api/whatsapp/connect`** | Stores tokens in plain text. Superseded by `/api/boards/[id]/channels`. |
-| **`/api/boards/[id]/fields`** (old field defs endpoint) | Reads from `State.fieldDefinitions`, superseded by `/api/boards/[id]/custom-fields`. |
-| **`app/(dashboard)/whatsapp/page.tsx`** | Legacy global WA settings. Already feature-flagged off. |
-| **`app/(dashboard)/crm/page.tsx`** | Duplicate of the Kanban board view, less capable, maintained separately. |
-| **`app/(dashboard)/builder/page.tsx`** (1,078 lines) | Visual builder with zero backend persistence — no API route exists to save anything. Dead feature. |
-| **`components/builder/templates.tsx`** (960 lines) | Same — purely visual with no save path. |
-| **`StageTransition` model** | Zero usage. If state transition rules are needed in v3, design from scratch. |
-| **`Workflow` model** | Zero usage. |
-| **`ApiToken` model** | Zero usage. |
-| **`ToolCallLog` model** | Write-only. If audit logging is needed in v3, add a query consumer and UI first. |
-| **`Conversation.aiModel`** | Never read at runtime — registry overrides it. |
-| **`Conversation.customFields`** | Legacy duplicate of `customData`. |
-| **`Conversation.collectedFields`** | Third overlapping JSON slot. Consolidate into `customData` in v3. |
-| **`/api/meta/leads`** | 501 stub, no design behind it. |
-| **`@nangohq/node` dependency** | Single optional route. Drop unless Nango is a defined product feature. |
-| **`vitest` + test config** | No tests exist. Start v3 with a proper test strategy from day one rather than carrying over a broken zero-coverage setup. |
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| name | String | |
+| slug | String | unique |
+| ownerId | String | FK → User |
+| plan | String | default: "free" ⚠️ nie ausgewertet |
+| createdAt | DateTime | |
 
 ---
 
-## Appendix A — File Tree Snapshot
+#### `Board` (boards) — Kern-Tenant-Objekt
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| teamId | String | FK → Team |
+| name | String | |
+| description | String? | |
+| isActive | Boolean | default: true |
+| ownerId | String | FK → User |
+| adminStatus | BoardAdminStatus | ACTIVE/PAUSED/SUSPENDED |
+| ownerStatus | BoardOwnerStatus | ACTIVE/INACTIVE/TRIAL |
+| behaviorMode | String | default: "reactive" |
+| boardCustomFields | Json | default: [] — Custom-Field-Schema |
+| contextWindowSize | Int | default: 20 |
+| createdAt, updatedAt | DateTime | |
+
+Relations: `team`, `states`, `members (BoardMember)`, `leads`, `conversations`, `reports (AdminReport)`, `brain (BoardBrain)`, `mediaAssets (Asset)`, `executionLogs`, `brainDocuments`, `brainRules`, `brainFAQs`, `channels (BoardChannel)`, `aiProviderConfig`
+
+---
+
+#### `State` (states) — **Herz der State Machine**
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| boardId | String | FK → Board |
+| name | String | |
+| type | StateType | AI / MESSAGE / TEMPLATE / CONDITION / WAIT |
+| mission | String? | Ziel des States für die AI |
+| rules | String? | Freitext-Direktiven |
+| orderIndex | Int | default: 0 |
+| isActive | Boolean | default: true |
+| autoTransition | Boolean | default: false |
+| nextStateId | String? | **Single forward pointer** — kein Fan-Out |
+| config | Json | State-type-spezifisch, schwach typisiert |
+| fieldDefinitions | Json | |
+| behaviorMode | String? | |
+| dataToCollect | Json | default: [] — Felder die gesammelt werden sollen |
+| completionRule | String? | z.B. "all_collected" |
+| availableTools | Json | default: [] — Tool-Namen für AI |
+| escalateOnNoReply | Int? | Minuten bis Eskalation |
+| escalateOnLowConfidence | Boolean | default: true |
+| escalateOnOffMission | Boolean | default: true |
+| maxFollowups | Int | default: 3 |
+| followupAction | String | default: "escalate" |
+| followupTargetState | String? | |
+| allowChannelSwitch | Boolean | default: true |
+| createdAt, updatedAt | DateTime | |
+
+Relations: `board`, `leads`, `conversations`, `assetLinks (AssetState)`
+
+⚠️ **Fehlend für Sub-Agent Refactor:** Kein `agentSystemPrompt`, `agentGoal`, `agentRole`, `handoffRules` — diese müssen per Migration ergänzt werden.
+
+---
+
+#### `Lead` (leads)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| boardId | String | FK → Board |
+| currentStateId | String? | FK → State |
+| assignedToId | String? | FK → User |
+| name | String | |
+| phone, email, avatar | String? | |
+| source | String | default: "manual" |
+| channel | String | default: "whatsapp" |
+| tags | String[] | default: [] |
+| leadScore | Int | default: 0 |
+| stateHistory | Json | Audit-Trail der State-Wechsel |
+| stageMovedAt | DateTime? | |
+| stageMovedBy | String? | "manual" / "ai_advance" |
+| customData | Json | default: {} — Custom Fields |
+| createdAt, updatedAt | DateTime | |
+
+Index: `[boardId, currentStateId]`
+
+---
+
+#### `Conversation` (conversations)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| leadId | String | FK → Lead |
+| boardId | String | FK → Board |
+| currentStateId | String? | FK → State |
+| channel | String | default: "whatsapp" |
+| externalId | String? | Plattform-Chat-ID |
+| status | ConversationStatus | ACTIVE/ARCHIVED/SPAM |
+| frozen | Boolean | default: false |
+| frozenAt, frozenReason, frozenBy | — | Escalation-Tracking |
+| aiEnabled | Boolean | default: true |
+| followupCount | Int | default: 0 |
+| conversationSummary | String? | Komprimierte History |
+| summaryUpdatedAt | DateTime? | |
+| messageCountSinceSum | Int | default: 0 |
+| customData | Json | |
+| lastMessageAt | DateTime | default: now() |
+| createdAt, updatedAt | DateTime | |
+
+Indexes: `[leadId, lastMessageAt]`, `[boardId, status, lastMessageAt]`
+
+---
+
+#### `Message` (messages)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| conversationId | String | FK → Conversation |
+| authorId | String? | FK → User, null = AI |
+| direction | Direction | INBOUND / OUTBOUND |
+| content | String | |
+| mediaUrl | String? | |
+| messageType | MessageType | TEXT/IMAGE/AUDIO/VIDEO/DOCUMENT/TEMPLATE/LOCATION |
+| status | MessageStatus | PENDING/SENT/DELIVERED/READ/FAILED |
+| aiGenerated | Boolean | default: false |
+| externalId | String? | |
+| timestamp | DateTime | |
+| metadata | Json | |
+
+Index: `[conversationId, timestamp]`
+
+---
+
+#### `BoardBrain` (board_brains) — AI-Konfiguration
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| boardId | String | **unique** — 1:1 mit Board |
+| systemPrompt | String | |
+| stylePrompt | String | |
+| infoPrompt | String | |
+| rulePrompt | String | |
+| defaultModel | String | default: "gpt-4o-mini" |
+| temperature | Float | default: 0.7 |
+| maxTokens | Int | default: 500 |
+| language | String | default: "de" |
+| tone | String | default: "friendly" |
+| channelSwitchTemplate | String? | |
+| createdAt, updatedAt | DateTime | |
+
+⚠️ **1:1 mit Board** — kein per-State Prompt-Override möglich.
+
+---
+
+#### `AIProviderConfig` (ai_provider_configs)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| boardId | String | **unique** — 1:1 mit Board |
+| defaultProvider | String | default: "groq" |
+| defaultModel | String | default: "llama-3.3-70b-versatile" |
+| fallbackProvider | String? | |
+| fallbackModel | String? | |
+| modelOverrides | Json | default: {} — per-purpose |
+| createdAt, updatedAt | DateTime | |
+
+⚠️ **1:1 mit Board** — kein per-State Provider-Selektion.
+
+---
+
+#### `PlatformAPIKey` (platform_api_keys)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| provider | String | unique |
+| encryptedKey | String | |
+| isActive | Boolean | default: true |
+| monthlyBudgetCents | Int? | Limit-Feld, keine Enforcement |
+| createdAt | DateTime | |
+
+---
+
+#### `BoardChannel` (board_channels)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| boardId + platform | — | Unique-Pair |
+| status | String | default: "disconnected" |
+| telegramBotToken | String? | verschlüsselt |
+| telegramBotUsername | String? | |
+| telegramWebhookSecret | String? | |
+| waPhoneNumberId | String? | |
+| waAccessToken | String? | verschlüsselt |
+| waBusinessAccountId | String? | |
+| waVerifyToken | String? | |
+| igPageId | String? | Instagram — kein Send-Code |
+| igAccessToken | String? | Instagram |
+| lastError | String? | |
+| connectedAt | DateTime? | |
+
+---
+
+#### `ChannelInvite` (channel_invites)
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| token | String | unique |
+| source | InviteSource | LEAD_REINVITE / BOARD_ACQUISITION |
+| status | ChannelInviteStatus | PENDING/CONSUMED/EXPIRED |
+| leadId, boardId, targetChannelId | — | |
+| expiresAt, consumedAt, consumedConversationId | — | |
+
+Indexes: `[token]`, `[leadId, createdAt]`
+
+---
+
+#### `LeadMemory` (lead_memory)
+
+K/V-Store pro Lead: `{id, leadId, key, value}` — Unique `[leadId, key]`
+
+---
+
+#### `Job` (jobs) — Async Queue
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| id | String (cuid) | PK |
+| type | String | "process_message" / "escalation_check" / "summarize_conversation" |
+| payload | Json | |
+| scheduledFor | DateTime | |
+| status | JobStatus | PENDING/RUNNING/COMPLETED/FAILED/CANCELLED/DEAD |
+| attempts / maxAttempts | Int | default: 0 / 3 |
+| lastError | String? | |
+| leadId, boardId | String? | |
+
+Indexes: `[status, scheduledFor]`, `[leadId]`
+
+---
+
+#### `UsageLog` (usage_logs) — Token/Cost-Tracking
+
+| Feld | Typ | Besonderheiten |
+|------|-----|----------------|
+| boardId, conversationId? | — | |
+| model, provider | String | |
+| inputTokens, outputTokens, totalTokens | Int | |
+| providerCost | Float | USD Cents |
+| creditCharged | Float | ⚠️ **immer 0.0 — nie gesetzt** |
+
+Indexes: `[boardId, createdAt]`, `[model, createdAt]`
+
+---
+
+#### `AdminReport` (admin_reports)
+
+`{boardId, stateId?, type: AlertType, message, status: AlertStatus}`  
+`AlertType`: STUCK / ERROR / MANUAL_INTERVENTION / LOOP / INFO  
+`AlertStatus`: OPEN / IN_PROGRESS / RESOLVED / IGNORED
+
+---
+
+#### `ExecutionLog` (execution_logs)
+
+`{boardId, conversationId, stateId, action, input, output, context, status: ExecutionStatus, errorMessage, needsAttention}`  
+`ExecutionStatus`: SUCCESS / ERROR / STUCK / WAITING_USER / MANUAL_INTERVENTION / LOOP  
+Index: `[boardId, status, createdAt]`
+
+---
+
+#### `ProcessedWebhook` (processed_webhooks) — Idempotenz
+
+`{externalId, channel, boardId}` — Unique-Triple. Index: `[processedAt]`
+
+---
+
+#### `Asset` / `AssetState` (R2-backed Media)
+
+`Asset`: id, boardId, name, mimeType, sizeBytes, r2Key (unique), publicUrl, tags, type (IMAGE/PDF/AUDIO/VIDEO/DOCUMENT)  
+`AssetState`: id, assetId, stateId (unique pair) — M:N Asset ↔ State
+
+---
+
+#### `BrainDocument` / `BrainRule` / `BrainFAQ` (Knowledge Base)
+
+Alle: `{id, boardId, content/rule/answer, createdAt}`
+
+---
+
+### 1.3 Enums
+
+| Enum | Values |
+|------|--------|
+| UserRole | ADMIN, USER, AGENT |
+| Role (TeamMember) | ADMIN, MEMBER, VIEWER |
+| BoardRole | ADMIN, AGENT, VIEWER |
+| StateType | AI, MESSAGE, TEMPLATE, CONDITION, WAIT |
+| ConversationStatus | ACTIVE, ARCHIVED, SPAM |
+| Direction | INBOUND, OUTBOUND |
+| MessageType | TEXT, IMAGE, AUDIO, VIDEO, DOCUMENT, TEMPLATE, LOCATION |
+| MessageStatus | PENDING, SENT, DELIVERED, READ, FAILED |
+| BoardAdminStatus | ACTIVE, PAUSED, SUSPENDED |
+| BoardOwnerStatus | ACTIVE, INACTIVE, TRIAL |
+| ChannelInviteStatus | PENDING, CONSUMED, EXPIRED |
+| InviteSource | LEAD_REINVITE, BOARD_ACQUISITION |
+| JobStatus | PENDING, RUNNING, COMPLETED, FAILED, CANCELLED, DEAD |
+| AssetType | IMAGE, PDF, AUDIO, VIDEO, DOCUMENT |
+| ExecutionStatus | SUCCESS, ERROR, STUCK, WAITING_USER, MANUAL_INTERVENTION, LOOP |
+| AlertType | STUCK, ERROR, MANUAL_INTERVENTION, LOOP, INFO |
+| AlertStatus | OPEN, IN_PROGRESS, RESOLVED, IGNORED |
+
+---
+
+## SECTION 2 — STATE MACHINE / AGENT EXECUTION
+
+### 2.1 State Transitions
+
+| Datei | Funktion | Trigger |
+|-------|----------|---------|
+| `src/lib/state-machine.ts` | `getCurrentState(conversationId)` | intern |
+| `src/lib/state-machine.ts` | `checkStateTransition(conversationId, state, msg)` | nach jeder Nachricht |
+| `src/lib/state-machine.ts` | `transitionState(conversationId, newStateId, reason?, userId?)` | AI ("ai_advance") / UI-Drag ("manual") |
+| `src/lib/state-machine/executor.ts` | `executeStateForConversation(conversationId, userMessage)` | Job Runner |
+
+**Transition-Logik in `checkStateTransition`:**
+- CONDITION-Type: Parsed `state.rules` als "score > 50" / "contains: ja"
+- `autoTransition=true`: Sofortiger Wechsel zu `nextStateId`
+- Keyword-Fallback: Matcht DE/EN Affirmativ-Keywords (ja, yes, ok, klar, gerne, passt, perfekt, interessiert, weiter)
+
+**Trigger-Typen:**
+- **Cron (jede Minute):** `/api/cron/process-jobs` → `src/lib/jobs/runner.ts::processNextBatch()` → `executeStateForConversation()`
+- **Webhook:** Telegram/WhatsApp → Enqueue `process_message` Job
+- **Manual UI (Drag-Drop):** `PATCH /api/crm/pipeline` → `transitionState()` mit reason="manual"
+
+### 2.2 AI-Call — Wo der LLM aufgerufen wird
+
+**⚠️ Zwei parallele Execution-Pfade:**
+
+**Path A — `src/lib/orchestration/index.ts` (457 LOC)** — Hauptpfad
+- Funktion: `orchestrate(input: OrchestrationInput): Promise<OrchestrationResult>`
+- Aufgerufen von: `executor.ts` für `StateType = AI`
+- AI-Call bei Zeile ~334: `aiRegistry.execute({boardId, purpose, messages, tools, temperature, maxTokens})`
+- **🔴 KRITISCHER BUG:** Kein `prisma.usageLog.create()` nach dem AI-Call. Token-Usage wird mit `{ input: 0, output: 0, total: 0 }` übergeben. **Cost-Tracking für den Hauptpfad ist defekt.**
+
+**Path B — `src/lib/ai/tool-engine.ts` (388 LOC)**
+- Eigener Tool-Calling Loop (bis zu 3 Iterationen)
+- Schreibt `UsageLog` korrekt (Zeile 231–244)
+- ❓ UNCLEAR: Ob Path B Path A ersetzt oder parallel läuft — Abhängigkeit unklar
+
+### 2.3 Prompt-Builder
+
+**Datei:** `src/lib/ai/prompt/builder.ts`
+
+```typescript
+function buildSystemPrompt(
+  brain: PromptBrain,        // systemPrompt, stylePrompt, infoPrompt, rulePrompt, language, tone
+  state: PromptState,        // id, name, type, mission, rules, nextStateId, dataToCollect, availableTools
+  memories: PromptMemory[],  // [{key, value}] aus LeadMemory
+  knowledge: PromptKnowledge,// {rules: BrainRule[], faqs: BrainFAQ[], docs: BrainDocument[]}
+  options: PromptOptions,    // channel, conversationSummary, customData, language
+): string
+```
+
+**Injected Components (in Reihenfolge):**
+1. `brain.systemPrompt`
+2. Style/Tone Section (`stylePrompt`)
+3. `brain.infoPrompt` — Kontext-Wissen
+4. `brain.rulePrompt` — Board-Regeln
+5. `knowledge.rules` — BrainRules aus DB
+6. `knowledge.faqs` — BrainFAQs aus DB
+7. `knowledge.docs` — BrainDocuments aus DB
+8. `state.mission` / `state.rules` — State-Direktiven
+9. `state.dataToCollect` — zu sammelnde Felder
+10. `leadMemories` — LeadMemory K/V
+11. `conversationSummary` — komprimierte History
+12. `customData` — Lead Custom Fields
+13. `formatMemoryForPrompt(memory)` — strukturiertes Memory
+
+Danach: `buildPromptMessages()` baut AIMessage-Array aus letzten 5 Messages (hardcoded, `take: 5` Zeile ~294 in orchestration/index.ts).
+
+### 2.4 Job Queue
+
+**Tabelle:** `Job` (jobs) — eigene DB-Tabelle, kein Bull/Redis
+
+**Runner:** `src/lib/jobs/runner.ts` (208 LOC) — `processNextBatch(limit = 10)`
+- `FOR UPDATE SKIP LOCKED` — Advisory Lock per Conversation
+- Exponential Backoff: `60s × 2^(attempts-1)`
+- Nach 3 Fehlern: `status = DEAD` + Admin-Notification
+
+**Vercel Cron Routes:**
+```json
+{ "path": "/api/cron/process-jobs",      "schedule": "* * * * *"  }
+{ "path": "/api/cron/check-stuck-leads", "schedule": "0 * * * *"  }
+```
+
+**Idempotenz:** `ProcessedWebhook` Unique-Triple `[externalId, channel, boardId]`
+
+### 2.5 Tool-Use Framework
+
+**Registry:** `src/lib/tools/registry.ts`  
+**Index:** `src/lib/tools/index.ts`  
+**Definitionen:** `src/lib/tools/definitions/`
+
+**Live-Tools:**
+
+| Tool | Datei | Funktion |
+|------|-------|---------|
+| `update_lead_data` | `update_lead_data.ts` | Schreibt `Lead.customData` |
+| `advance_state` | `advance_state.ts` | State-Transition ausführen |
+| `escalate_to_human` | `escalate_to_human.ts` | Conversation einfrieren + AdminReport |
+| `send_template` | `send_template.ts` | Vorkonfigurierten Text senden |
+| `set_lead_score` | `set_lead_score.ts` | `Lead.leadScore` setzen |
+| `suggest_channel_switch` | `suggest-channel-switch.ts` | ChannelInvite erstellen |
+| `send_asset` | `send-asset.ts` | R2-Asset als Media-Nachricht |
+| `search_assets` | `search-assets.ts` | Assets per Tag/Typ suchen |
+
+**Legacy-Tools (deprecated, noch registriert):** `change_state`, `send_text`, `store_memory`, `get_history`
+
+**Default für neue AI-States:**
+```typescript
+export const DEFAULT_AI_STATE_TOOLS = [
+  "update_lead_data",
+  "advance_state",
+  "escalate_to_human",
+]
+```
+
+**Stub-Tools (nur UI, keine Implementierung):** `book_calendar`, `send_email`, `trigger_webhook`, `create_stripe_link`, `generate_pdf`
+
+---
+
+## SECTION 3 — MULTI-PROVIDER AI ABSTRACTION
+
+### 3.1 Provider-Layer
+
+**Registry:** `src/lib/ai/registry.ts` (250 LOC)  
+**Provider-Files:** `src/lib/ai/providers/` — anthropic.ts, groq.ts, openai.ts, openrouter.ts, deepseek.ts
+
+### 3.2 Provider-Selection
+
+1. Lade `AIProviderConfig` aus DB per `boardId` (1:1 per Board)
+2. Wende `modelOverrides[purpose]` an
+3. Primary Provider mit 3× Retry (Exponential Backoff: 1s, 2s, 4s)
+4. Falls Fehler: `fallbackProvider`/`fallbackModel` wenn konfiguriert
+5. API-Key-Cache: In-Memory Map, 60s TTL, Fallback auf Env-Vars
+
+**Supported Providers:**
+
+| Provider | Default-Modell | Preisrahmen Input/Output (¢/1M Token) |
+|----------|---------------|--------------------------------------|
+| Groq | llama-3.3-70b-versatile | 5.9 / 7.9 |
+| OpenRouter | deepseek-chat | variabel |
+| OpenAI | gpt-4o-mini | ~150 / 600 |
+| DeepSeek | deepseek-chat | günstig |
+| Anthropic | claude-sonnet-4-6 | 300 / 1500 |
+
+### 3.3 Fallback
+
+- 3× Retry bei Primary Provider
+- Danach: Wechsel auf `fallbackProvider` falls gesetzt
+- Falls kein Fallback: Exception → Job schlägt fehl → Retry-Logik
+
+### 3.4 Token / Cost Tracking
+
+- `aiRegistry.execute()` gibt `{usage: {inputTokens, outputTokens, totalTokens}, providerCost, model, provider}` zurück
+- **Korrekt geloggt:** `src/lib/ai/tool-engine.ts:231` → `prisma.usageLog.create()`
+- **🔴 NICHT geloggt:** `src/lib/orchestration/index.ts:334` — Haupt-AI-Call ohne UsageLog
+- `UsageLog.creditCharged` — Feld vorhanden, **immer 0.0**, nie gesetzt
+- Admin-Markup: Fest 2.0× in `src/app/api/admin/usage/route.ts`
+
+### 3.5 API-Key-Storage
+
+**Priorität:** `PlatformAPIKey` DB (verschlüsselt) → Env-Vars (Fallback)  
+**Encryption:** `ENCRYPTION_KEY` Env-Variable, eigene Implementierung in `src/lib/crypto/`
+
+---
+
+## SECTION 4 — MESSAGING DISPATCHER
+
+### 4.1 Dispatcher
+
+**Datei:** `src/lib/messaging/dispatcher.ts` (258 LOC)
+
+**Hauptfunktionen:**
+
+- `sendMessage(conversationId, text)` — Text senden per Channel
+- `sendMediaMessage(conversationId, media)` — Media senden (mimeType-Mapping)
+- `sendAIResponse(conversationId, text)` — Detektiert R2-URLs in Text, sendet als Media, restlichen Text als Text
+
+### 4.2 Channel-Status
+
+| Channel | Send | Media | Webhook | Status |
+|---------|------|-------|---------|--------|
+| WhatsApp | ✅ `graph.facebook.com/v18.0/{id}/messages` | ✅ | ✅ | Live |
+| Telegram | ✅ `/bot{token}/sendMessage` | ✅ sendPhoto/Audio/Video/Document | ✅ | Live |
+| Instagram | ❌ | ❌ | ❌ | Nur Schema |
+
+### 4.3 Webhook-Endpoints
+
+| Route | Method | Status |
+|-------|--------|--------|
+| `/api/whatsapp/webhook/[boardId]` | GET | ✅ Meta Verify |
+| `/api/whatsapp/webhook/[boardId]` | POST | ✅ Message Processing |
+| `/api/telegram/webhook/[boardId]` | POST | ✅ Update Processing (346 LOC) |
+| `/api/webhooks/status` | GET | ✅ Health Check |
+
+### 4.4 Channel-Connection-State
+
+Gespeichert in `BoardChannel`:
+- `status`: "connected" / "disconnected" / "error"
+- `lastError`: Letzter Fehlertext
+- `connectedAt`: Timestamp der Verbindung
+
+---
+
+## SECTION 5 — ADMIN / SUPERVISOR INFRASTRUCTURE
+
+### 5.1 Admin-Bereich
+
+**Admin-Guard:** `src/lib/auth/admin-guard.ts` — `requireAdmin(userId)` wirft bei `user.role ≠ ADMIN`
+
+**API Routes:**
+
+| Route | Funktion |
+|-------|----------|
+| `/api/admin/notifications` | CRUD AdminReport |
+| `/api/admin/platform-keys` | Verwaltung verschlüsselter API-Keys |
+| `/api/admin/reports/[id]` | Status-Updates für Reports |
+| `/api/admin/scan` | Health-Scan (stuck, loops) |
+| `/api/admin/usage` | Token/Cost-Aggregation (2× Markup) |
+
+**UI-Routes:** `/dashboard/admin-bot`, `/dashboard/admin-notifications`, `/dashboard/admin-usage`
+
+### 5.2 Admin-Telegram-Bot
+
+**Datei:** `src/lib/notifications/admin-notify.ts`
+
+Funktion `notifyAdmin({type, title, body, boardId?, leadId?, jobId?})`:
+1. DB-Write: `prisma.adminNotification.create()` — ⚠️ `AdminNotification` Tabelle **existiert nicht im Schema** (silent catch, schlägt immer fehl)
+2. E-Mail via Resend API (wenn `RESEND_API_KEY` + `ADMIN_EMAIL`)
+3. Telegram-Nachricht an `ADMIN_TELEGRAM_CHAT_ID` (wenn Token gesetzt)
+
+**Notification-Types:** `FAILED_JOB`, `LEAD_STUCK`, `SYSTEM_ERROR`
+
+⚠️ Kein Inbound-Command-Handler — Bot kann nur senden, nicht empfangen.
+
+### 5.3 Audit-Logging
+
+| Tabelle | Was geloggt wird |
+|---------|-----------------|
+| `ExecutionLog` | State-Execution mit Input/Output/Status |
+| `AdminReport` | Escalations, Errors, Stuck-States |
+| `UsageLog` | Token-Counts + Costs (partiell — nur via tool-engine Pfad) |
+| `Job` | Job-Lifecycle |
+| `Lead.stateHistory` | State-Transition-History pro Lead (Json) |
+| `ProcessedWebhook` | Idempotenz-Tracking |
+
+---
+
+## SECTION 6 — CREDIT / BILLING SYSTEM
+
+### Status: ❌ NICHT IMPLEMENTIERT
+
+| Feature | Status |
+|---------|--------|
+| Stripe Integration | ❌ Nur Stub-Tool in StateForm.tsx UI |
+| Credit-Felder (User/Team/Board) | ❌ Keine |
+| Auto-Recharge | ❌ |
+| Soft-Stop bei Balance=0 | ❌ |
+| Plan-Enforcement | ❌ `Team.plan` existiert ("free"), wird nie ausgewertet |
+| `UsageLog.creditCharged` | ❌ Feld vorhanden, immer 0.0 |
+
+**Was existiert:**
+- `UsageLog.providerCost` — Provider-Kosten in USD Cents (partiell tracked)
+- `PlatformAPIKey.monthlyBudgetCents` — Budget-Limit-Feld, keine Enforcement-Logic
+- Admin-Usage-Report mit 2× Markup als manuelle Kalkulation
+
+---
+
+## SECTION 7 — BOARDS / TENANTS / LEADS
+
+### 7.1 Multi-Tenancy-Modell
 
 ```
-src/
-├── app/
-│   ├── (auth)/login/
-│   ├── (dashboard)/
-│   │   ├── admin-bot/
-│   │   ├── boards/
-│   │   │   └── [id]/  (page, settings, brain, flow, assets)
-│   │   ├── builder/          ← dead (no persistence)
-│   │   ├── crm/              ← duplicate of board pipeline
-│   │   ├── dashboard/
-│   │   ├── reports/
-│   │   ├── settings/
-│   │   ├── team/
-│   │   ├── telegram/         ← empty scaffold (no page.tsx)
-│   │   └── whatsapp/         ← deprecated, feature-flagged
-│   ├── api/
-│   │   ├── admin/            (reports, scan, platform-keys)
-│   │   ├── ai/               (chat ✅, generate-flow ⚠️, generate-landing ⚠️)
-│   │   ├── auth/             (nextauth, signup)
-│   │   ├── boards/[id]/      (states, pipeline, leads, brain/*, assets, fields, custom-fields, channels, ai-config)
-│   │   ├── conversations/[id]/ (messages, state, fields, ai, freeze)
-│   │   ├── crm/pipeline/
-│   │   ├── cron/process-jobs/  ✅
-│   │   ├── dashboard/stats/
-│   │   ├── debug/
-│   │   ├── health/
-│   │   ├── integrations/     (nango)
-│   │   ├── leads/[leadId]/   (telegram-invite)
-│   │   ├── meta/leads/       ❌ 501 stub
-│   │   ├── notifications/
-│   │   ├── reports/
-│   │   ├── team/             (invite, members/[id])
-│   │   ├── telegram/         (connect, disconnect, status, webhook — legacy global)
-│   │   ├── telegram/webhook/[boardId]/  ✅ canonical
-│   │   ├── user/
-│   │   ├── webhook/          (telegram ⚠️ legacy, whatsapp ⚠️ legacy)
-│   │   └── whatsapp/         (send, ai-send, connect ⚠️, account 410, disconnect 410, webhook/[boardId])
-│   └── (public pages: /, /login, /signup, /agb, etc.)
-├── components/
-│   ├── boards/               (LeadDrawer, LeadCard, PipelineBoard, LeadImportModal, etc.)
-│   ├── builder/              ← dead (visual only)
-│   ├── crm/                  ← legacy
-│   ├── flow-builder/         (FlowBuilder, StateForm, StateCard, PromptGenerator)
-│   ├── layout/               (TopNavigation, Footer, UserMenu)
-│   ├── leads/                (TelegramInviteUI)
-│   └── ui/                   (shadcn primitives)
-└── lib/
-    ├── ai/                   (registry ✅, tool-engine ✅, providers/ ✅, groq-client ⚠️, engine ❌)
-    ├── crypto/               (secrets)
-    ├── jobs/                 (enqueue, runner ✅)
-    ├── messaging/            (dispatcher ✅, telegram-invite)
-    ├── state-machine/        (executor ✅)
-    ├── tools/                (registry, index, executor, definitions/)
-    ├── types/
-    └── utils/
+User → [TeamMember] → Team → Board → Lead → Conversation
+                    ↕
+               [BoardMember]
 ```
+
+**Isolation:** Board-Level. Leads, States, Conversations, BrainData, Assets sind alle `boardId`-scoped.
+
+**Access Control:**
+- `User.role = ADMIN`: Platform-Admin-Zugriff
+- `BoardMember.role = ADMIN`: Vollzugriff auf Board
+- `BoardMember.role = AGENT`: Read/Write, kein Delete
+- `BoardMember.role = VIEWER`: Read-Only
+
+### 7.2 Custom Fields
+
+- **Schema-Definition:** `Board.boardCustomFields` (Json `[]`) — Feldtypen + Namen
+- **Datenhaltung:** `Lead.customData` (Json `{}`) — K/V-Pairs pro Lead
+- **State-Integration:** `State.dataToCollect` (Json `[]`) — zu sammelnde Felder
+- **Update-Endpoint:** `PATCH /api/conversations/[id]/fields`
+
+### 7.3 Test-Board `cmoqqpwn70001bro1metou154`
+
+❓ UNCLEAR — Kein Verweis auf diese ID im Codebase oder Seed-Files. Existiert nur als DB-Datensatz.
+
+Seed-Files: `prisma/seed.ts`, `scripts/seed-test-users.ts`, `scripts/seed-e2e-user.ts`
 
 ---
 
-## Appendix B — Open Questions for the v3 Architect
+## SECTION 8 — UI / FRONTEND
 
-1. **Is "Lead" distinct from "Conversation" in the product concept?** If a customer texts on WhatsApp, changes their phone number, and comes back on Telegram — is that one Lead with two Conversations, or two separate Leads? The current model cannot represent this.
+### 8.1 Alle Routes
 
-2. **What is the intended role of BrainLab?** The Documents/Rules/FAQs UI exists but is never fed into inference. Is this a planned RAG feature? If yes, v3 needs a retrieval layer (embedding search or simple string injection). If it's being replaced by the `BoardBrain` system prompt, the UI and models can be dropped.
+**Auth (`src/app/(auth)/):**  
+`/login`, `/signup` (Feature-Flag), `/verify-email`
 
-3. **Which AI provider is the primary product offering?** The codebase supports Groq/OpenRouter/OpenAI/DeepSeek/Anthropic. Is the intent that customers bring their own keys, or that the product provides a metered service with `PlatformAPIKey` keys?
+**Dashboard (`src/app/(dashboard)/):**
 
-4. **What happens to boards still registered on legacy webhook URLs?** Before deleting `agent.ts` and the global webhooks, existing boards in production need to be migrated. Is there a migration plan or a redirect/proxy strategy?
+| Route | LOC | Status |
+|-------|-----|--------|
+| `/dashboard` | 540 | ✅ |
+| `/boards` | — | ✅ |
+| `/boards/[id]` | — | ✅ Kanban |
+| `/boards/[id]/flow` | — | ✅ State-Editor |
+| `/boards/[id]/brain` | 514 | ✅ BrainLab |
+| `/boards/[id]/assets` | — | ✅ Asset-Manager |
+| `/boards/[id]/usage` | — | ✅ Cost-Dashboard |
+| `/boards/[id]/settings` | 799 | ✅ |
+| `/boards/[id]/settings/access` | 375 | ✅ |
+| `/crm` | — | ✅ |
+| `/reports` | 421 | ✅ |
+| `/team` | 247 | ✅ |
+| `/settings` | 252 | ✅ |
+| `/admin-bot` | — | ✅ |
+| `/admin-notifications` | — | ✅ |
+| `/admin-usage` | — | ✅ |
 
-5. **Is the Builder feature (`/builder`) intended to ship?** It is 1,078 lines of UI with zero backend. If it is a planned product feature, it needs an API. If it was exploratory, it should be deleted from v3's scope.
+**Public:** `/`, `/product`, `/pricing`, `/features`, `/contact`, `/agb`, `/datenschutz`, `/impressum`
 
-6. **Is Nango a core integration strategy?** `@nangohq/node` is a significant third-party dependency. If the product will have deep third-party integrations (Google Calendar, CRMs), Nango makes sense. If not, it adds weight for a single optional route.
+### 8.2 Kanban Board
 
-7. **Multi-board Telegram setup**: The current model allows one Telegram bot per board. Is that the intended UX, or should there be a company-level bot that routes to boards based on message content or user identity?
+- **Components:** `PipelineBoard`, `KanbanColumn`, `SortableLeadCard`, `LeadDrawer.tsx` (1067 LOC)
+- **Drag-Drop:** `@dnd-kit/core` + `@dnd-kit/sortable`
+- **Status:** ✅ Funktional
 
-8. **Rate limiting strategy**: The in-memory rate limiter is not suitable for a public SaaS. What is the acceptable rate limiting solution? Vercel Edge, Redis, or a third-party service?
+### 8.3 State-Editor UI
 
-9. **Test strategy**: Zero test files exist. What level of test coverage is required before v3 ships? The architecture (job queue + executor + registry) is highly testable in isolation — but only if this is decided upfront.
+- **Files:** `src/app/(dashboard)/boards/[id]/flow/` + `src/components/flow-builder/StateForm.tsx` (393 LOC)
+- **Konfigurierbar:** Name, Type, Mission, Rules, Tools (hardcoded Liste inkl. Stubs), dataToCollect, completionRule, nextStateId, Escalation-Settings
+- **⚠️ Problem:** Stub-Tools (`book_calendar` etc.) erscheinen als wählbare Optionen
 
-10. **`AdminNotification` vs `AdminReport`**: Both exist, both serve "something needs human attention" use cases. v3 should collapse these into one concept. Which semantics should win?
+### 8.4 Lead Detail View
+
+- **File:** `LeadDrawer.tsx` (1067 LOC)
+- **Inhalt:** Lead-Info, Custom Fields, State-History, Conversations, Messages, Lead Score, Channel-Switch, Memory-Viewer
+
+### 8.5 BrainLab UI
+
+- **File:** `src/app/(dashboard)/boards/[id]/brain/page.tsx` (514 LOC)
+- **Features:** System/Style/Info/Rule-Prompts, BrainDocuments, BrainRules, BrainFAQs, AI-Simulation (Chat-Test via "simulate-" prefix)
+
+---
+
+## SECTION 9 — DEPLOYMENT / ENV / CONFIG
+
+### 9.1 Vercel
+
+**`vercel.json` (vollständig):**
+```json
+{
+  "crons": [
+    { "path": "/api/cron/process-jobs",      "schedule": "* * * * *" },
+    { "path": "/api/cron/check-stuck-leads", "schedule": "0 * * * *" }
+  ]
+}
+```
+
+Keine Function-Timeouts, Rewrites, oder Region-Config. Alles Vercel-Default.
+
+### 9.2 Environment Variables (nur Namen)
+
+| Variable | Kategorie | Pflicht |
+|----------|-----------|---------|
+| `DATABASE_URL` | DB | ✅ |
+| `DIRECT_URL` | DB | ✅ |
+| `NEXTAUTH_URL` | Auth | ✅ |
+| `NEXTAUTH_SECRET` | Auth | ✅ |
+| `ENCRYPTION_KEY` | Security | ✅ |
+| `CRON_SECRET` | Security | ✅ |
+| `NEXT_PUBLIC_APP_URL` | Public | ✅ |
+| `GOOGLE_CLIENT_ID` | Auth | Optional |
+| `GOOGLE_CLIENT_SECRET` | Auth | Optional |
+| `GROQ_API_KEY` | AI | Optional (env-Fallback) |
+| `OPENROUTER_API_KEY` | AI | Optional |
+| `OPENAI_API_KEY` | AI | Optional |
+| `DEEPSEEK_API_KEY` | AI | Optional |
+| `ANTHROPIC_API_KEY` | AI | Optional |
+| `TELEGRAM_BOT_TOKEN` | Messaging | Optional |
+| `META_ACCESS_TOKEN` | Messaging | Optional |
+| `META_PHONE_NUMBER_ID` | Messaging | Optional |
+| `META_WEBHOOK_VERIFY_TOKEN` | Messaging | Optional |
+| `META_APP_SECRET` | Messaging | Optional |
+| `R2_ACCOUNT_ID` | Storage | Optional |
+| `R2_ACCESS_KEY_ID` | Storage | Optional |
+| `R2_SECRET_ACCESS_KEY` | Storage | Optional |
+| `R2_BUCKET_NAME` | Storage | Optional |
+| `R2_PUBLIC_URL` | Storage | Optional |
+| `UPSTASH_REDIS_REST_URL` | Rate-Limit | Optional |
+| `UPSTASH_REDIS_REST_TOKEN` | Rate-Limit | Optional |
+| `RESEND_API_KEY` | Email | Optional |
+| `ADMIN_EMAIL` | Admin | Optional |
+| `ADMIN_TELEGRAM_CHAT_ID` | Admin | Optional |
+| `NEXT_PUBLIC_FEATURE_SIGNUP` | Feature-Flag | Optional |
+| `NEXT_PUBLIC_FEATURE_WHATSAPP` | Feature-Flag | Optional |
+| `NEXT_PUBLIC_FEATURE_BUILDER` | Feature-Flag | Optional |
+
+### 9.3 Build Scripts
+
+```json
+{
+  "dev":         "next dev",
+  "postinstall": "prisma generate",
+  "build":       "prisma generate && next build",
+  "start":       "next start",
+  "lint":        "next lint",
+  "db:seed":     "ts-node prisma/seed.ts",
+  "db:generate": "prisma generate",
+  "db:push":     "prisma db push",
+  "test:db":     "vitest run tests/database.test.ts",
+  "test:auth":   "vitest run tests/auth.test.tsx",
+  "test:e2e":    "playwright test",
+  "db:seed-e2e": "ts-node scripts/seed-e2e-user.ts"
+}
+```
+
+✅ `postinstall: "prisma generate"` vorhanden.
+
+---
+
+## SECTION 10 — KNOWN ISSUES & TECHNICAL DEBT
+
+### 10.1 TODOs / FIXMEs / HACKs / BUGs
+
+**Exakt 1 TODO im gesamten `src/`-Verzeichnis:**
+
+```
+src/app/api/telegram/webhook/[boardId]/route.ts:146
+// TODO: Wenn boardBrain ein Welcome-Message-Feld bekommt, hier auto-greeten
+```
+
+Kein FIXME, HACK oder BUG-Kommentar gefunden.
+
+### 10.2 `@ts-ignore` / `as any`
+
+**Gesamt: 149 Instanzen**
+
+| Datei | Anzahl | Root Cause |
+|-------|--------|-----------|
+| `src/app/api/telegram/webhook/[boardId]/route.ts` | ~13 | Prisma-Drift |
+| `src/app/api/crm/pipeline/route.ts` | ~8 | Prisma-Drift |
+| `src/lib/orchestration/index.ts` | ~5 | `brainRule/FAQ/Doc/leadMemory` alle `as any` |
+| `src/app/api/leads/[leadId]/invite-channel/route.ts` | ~5 | Prisma-Drift |
+| `src/auth.ts:124` | 1 | `(user as any).role` in JWT callback |
+| `src/lib/notifications.ts` | 1 | `(prisma as any).adminReport.create` |
+
+**Root Cause:** Prisma-Client nicht aktuell generiert nach Schema-Änderungen → `as any` Workarounds im Working-Tree.
+
+### 10.3 Pain Points
+
+- `"I'll help you with that shortly."` in `src/lib/orchestration/index.ts:383` — **englischer Fallback-Text** wird an deutschsprachige Kunden gesendet
+- WhatsApp Webhooks antworten immer 200 (Meta-Anforderung) — Fehler werden geloggt aber nicht propagiert
+- `prisma.adminNotification.create()` in `admin-notify.ts` — Tabelle nicht im Schema → silent fail bei jedem Admin-Notify
+
+### 10.4 Files > 500 LOC (Refactor-Kandidaten)
+
+| Datei | LOC |
+|-------|-----|
+| `src/lib/translations.ts` | 1084 |
+| `src/components/boards/LeadDrawer.tsx` | 1067 |
+| `src/app/(dashboard)/boards/[id]/settings/page.tsx` | 799 |
+| `src/app/page.tsx` | 608 |
+| `src/app/(dashboard)/dashboard/page.tsx` | 540 |
+| `src/app/(dashboard)/boards/[id]/brain/page.tsx` | 514 |
+| `src/lib/orchestration/index.ts` | 457 |
+| `src/app/(dashboard)/reports/page.tsx` | 421 |
+| `src/components/boards/LeadImportModal.tsx` | 411 |
+| `src/components/flow-builder/StateForm.tsx` | 393 |
+| `src/lib/ai/tool-engine.ts` | 388 |
+| `src/app/(dashboard)/boards/[id]/settings/access/page.tsx` | 375 |
+| `src/app/api/telegram/webhook/[boardId]/route.ts` | 346 |
+| `src/lib/state-machine/executor.ts` | 306 |
+
+---
+
+## SECTION 11 — REFACTOR READINESS ASSESSMENT
+
+### 11.1 Code-Pfade die bei State-Model-Erweiterung angepasst werden müssen
+
+Bei Addition von `agentSystemPrompt`, `agentGoal`, `agentRole`, `handoffRules`:
+
+| Datei | Was muss angepasst werden |
+|-------|--------------------------|
+| `prisma/schema.prisma` | Migration: Neue Felder zu `State` |
+| `src/lib/ai/prompt/builder.ts` | `PromptState` Interface + `buildSystemPrompt()` |
+| `src/lib/orchestration/index.ts:251` | `statePrompt` Objekt-Konstruktion |
+| `src/lib/state-machine/executor.ts` | Dispatch-Logik für neue StateTypes |
+| `src/lib/state-machine.ts` | `checkStateTransition()` für handoffRules |
+| `src/components/flow-builder/StateForm.tsx` | UI-Felder |
+| `src/app/api/boards/[id]/states/route.ts` | CRUD für neue Felder |
+
+### 11.2 Wo LLM-Call-Results verarbeitet werden (Andock-Punkt für `AgentRun`)
+
+**Haupt-Andockpunkt: `src/lib/orchestration/index.ts:389–440`**
+
+```
+aiRegistry.execute()                      Zeile ~334
+  → responseText = sanitizeAIOutput()     Zeile 346
+  → prisma.message.create() (OUTBOUND)    Zeile 391
+  → sendAIResponse()                      Zeile 401
+  → prisma.conversation.update()          Zeile 404
+  → appendFact()                          Zeile 409
+  → updateMemory()                        Zeile 413
+  ← HIER AgentRun.create() einfügen →
+  → recordExecution() → ExecutionLog      Zeile 418
+```
+
+Alle relevanten Daten sind nach Zeile 413 verfügbar: `conversationId`, `stateId`, `boardId`, `responseText`, `toolCalls`, `tokenUsage`, `extraction`.
+
+### 11.3 Single-Agent-per-Board Annahmen (Breaking Points bei Migration)
+
+| Code-Stelle | Problem |
+|-------------|---------|
+| `BoardBrain` 1:1 mit Board | Alle States teilen denselben System-Prompt |
+| `AIProviderConfig` 1:1 mit Board | Provider global, nicht per State |
+| `orchestrate()` lädt `board.brain` ohne State-Override | State-eigene Prompts würden ignoriert |
+| `Board.contextWindowSize` | Globale Window-Size |
+| `State.nextStateId` — Single-Forward-Pointer | Kein Fan-Out für Sub-Agent Handoffs |
+
+**Was bereits Multi-Agent-ready ist:**
+- ✅ `State.availableTools` — per-State Tool-Konfiguration
+- ✅ `State.mission` / `State.rules` — per-State Direktiven
+- ✅ `State.dataToCollect` — per-State Memory-Schema
+- ✅ `State.escalateOnNoReply/LowConfidence/OffMission` — per-State Eskalationsregeln
+- ✅ Job-Queue mit Advisory-Locks
+- ✅ `ExecutionLog` pro State-Execution
+
+### 11.4 Was VOR dem Refactor gefixt werden muss
+
+**🔴 KRITISCH (muss vor Refactor):**
+
+1. **UsageLog-Gap in `orchestration/index.ts`** — `aiRegistry.execute()` Response wird nie in `UsageLog` geschrieben. Billing-System ist blind für den Hauptpfad. Fix: Response-Token-Daten nach Zeile 341 persistieren.
+
+2. **Prisma-Client-Drift** — `brainRule`, `brainFAQ`, `brainDocument`, `leadMemory`, `adminReport` werden mit `(prisma as any)` aufgerufen. `prisma generate` muss ausgeführt und alle Imports korrigiert werden, sonst baut der Refactor auf defekten Types auf.
+
+3. **`AdminNotification` Tabelle fehlt** — `src/lib/notifications/admin-notify.ts:L10` versucht `prisma.adminNotification.create()` — dieses Model existiert nicht im Schema. Jede Admin-Benachrichtigung schlägt mit silent-catch fehl.
+
+**🟡 SOLLTE vor Refactor (aber nicht blockierend):**
+
+4. **Englischer Fallback-Text** — `"I'll help you with that shortly."` in `orchestration/index.ts:383` muss German-Fallback bekommen.
+
+5. **Tool-Engine vs. Orchestration Duplizierung klären** — Zwei parallele AI-Execution-Pfade. Welcher ist kanonisch? Welcher wird deprecated?
+
+6. **`State.nextStateId` auf Fan-Out erweitern** — Single-Forward-Pointer reicht für Handoff-Rules nicht aus. Kandidat: `handoffRules: Json` mit Array von `{condition, targetStateId}`.
+
+---
+
+## SECTION 12 — RECOMMENDED NEXT STEPS
+
+### Was zuerst stabilisieren?
+
+**Drei Pflicht-Fixes vor dem Refactor:**
+
+**1. `prisma generate` + alle `as any` Casts entfernen**  
+149 `as any` sind kein Code-Style-Problem — sie zeigen an dass der Prisma-Client-Type out-of-sync ist. Ohne saubere Types baut der gesamte Refactor auf unsicherem Fundament. Nach `prisma generate` sollten ~80% der `as any` Casts durch echte Types ersetzt werden können.
+
+**2. UsageLog-Gap schließen**  
+`orchestration/index.ts` Zeile ~334: nach `aiRegistry.execute()` fehlt `prisma.usageLog.create()`. Das ist ein Datenbankwrite, 3 Zeilen Code, der das gesamte Billing-System repariert. Muss vor dem Refactor, weil sonst ein zukünftiges Credit-System auf Phantom-Daten aufbaut.
+
+**3. `AdminNotification` bereinigen**  
+Entweder: `AdminNotification` Model zum Schema hinzufügen. Oder: `admin-notify.ts` auf `AdminReport` umstellen (das Model existiert und wird bereits von `notifications.ts` genutzt). Eine der beiden Tabellen ist redundant.
+
+### Die 3 größten Risk-Files
+
+| Rang | Datei | Risiko |
+|------|-------|--------|
+| 🔴 1 | `src/lib/orchestration/index.ts` (457 LOC) | Haupt-AI-Orchestration, hat kritischen UsageLog-Bug, viele `as any`, wird durch Sub-Agent-Refactor komplett restrukturiert. Zentralste Datei im System. |
+| 🔴 2 | `src/app/api/telegram/webhook/[boardId]/route.ts` (346 LOC) | 13+ `as any`, enthält Message-Processing + Invite-Logic + Channel-Switch in einer Route — zu viele Verantwortlichkeiten, schwer testbar |
+| 🟡 3 | `src/components/flow-builder/StateForm.tsx` (393 LOC) | Hardcoded Tool-Liste (Stubs als wählbare Optionen), wird durch Sub-Agent-Felder stark erweitert — UI-Komplexität wächst linear mit Refactor |
+
+### Inkrementell oder Neu-Schreiben?
+
+**Empfehlung: Inkrementell — aber mit klarer Layer-Grenze.**
+
+**Behalten (gut designt, nicht anfassen):**
+- Job-Queue + Idempotenz-Tracking
+- Provider-Registry + Fallback-Mechanismus
+- Messaging-Dispatcher (sendMessage / sendAIResponse)
+- Tool-Registry + Tool-Definitionen
+- Memory-System (extractor / resolver / updater)
+
+**Neu schreiben (minimaler Eingriff, maximaler Effekt):**
+
+`orchestration/index.ts` → **Supervisor + State-Agent Pattern:**
+
+```
+Job: process_message
+  → SupervisorAgent.route(conversationId, message)
+      → Lade Conversation + State
+      → StateAgent(state.agentRole, state.agentSystemPrompt)
+          → buildSystemPrompt() [state-specific overrides]
+          → aiRegistry.execute() + usageLog.create()   ← Fix Bug hier
+          → tools.execute()
+          → evaluateHandoffRules(state.handoffRules)
+              → transitionState(targetStateId, reason)
+      → AgentRun.create()  ← neue Tabelle
+      → ExecutionLog.create()
+```
+
+**Migration-Strategie:** Feature-Flag `Board.useSubAgents: Boolean` — schrittweise Boards umstellen. Alter `orchestrate()` als Fallback bis Parität erreicht. Kein Big-Bang.
+
+**Neue Schema-Felder die gebraucht werden:**
+- `State.agentSystemPrompt` — State-spezifischer Prompt-Override
+- `State.agentGoal` — Ziel für Supervisor-Routing
+- `State.agentRole` — z.B. "qualifier", "closer", "support"
+- `State.handoffRules` — JSON Array `[{condition, targetStateId, reason}]`
+- `AgentRun` Tabelle — jeder LLM-Call als eigener Datensatz
+
+---
+
+*Ende des Audit Reports*  
+*Read-only — keine Code-Änderungen wurden vorgenommen*

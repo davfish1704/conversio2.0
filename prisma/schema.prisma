@@ -13,30 +13,41 @@ datasource db {
 // ============================================
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  googleId      String?   @unique @map("google_id")
-  image         String?
-  password      String?
-  emailVerified     DateTime? @map("email_verified")
-  verifyToken       String?   @unique @map("verify_token")
-  verifyTokenExpiry DateTime? @map("verify_token_expiry")
-  role              UserRole  @default(USER)
-  timezone      String?   @default("Europe/Berlin")
-  language      String?   @default("de")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                String       @id @default(cuid())
+  email             String       @unique
+  name              String?
+  googleId          String?      @unique @map("google_id")
+  image             String?
+  password          String?
+  emailVerified     DateTime?    @map("email_verified")
+  verifyToken       String?      @unique @map("verify_token")
+  verifyTokenExpiry DateTime?    @map("verify_token_expiry")
+  role              UserRole     @default(USER)
+  timezone          String?      @default("Europe/Berlin")
+  language          String?      @default("de")
+  adminChannel        AdminChannel @default(TELEGRAM)
+  adminTelegramChatId String?
+  adminWhatsappNumber String?
+  isSuperAdmin        Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  memberships   TeamMember[]
-  ownedTeams    Team[]        @relation("TeamOwner")
-  boardMembers  BoardMember[]
-  messages      Message[]     @relation("MessageAuthor")
-  assignedLeads Lead[]        @relation("LeadAssignee")
+  accounts         Account[]
+  sessions         Session[]
+  memberships      TeamMember[]
+  ownedTeams       Team[]             @relation("TeamOwner")
+  boardMembers     BoardMember[]
+  messages         Message[]          @relation("MessageAuthor")
+  assignedLeads    Lead[]             @relation("LeadAssignee")
+  approvedActions  SupervisorAction[] @relation("ActionApprover")
 
   @@map("users")
+}
+
+enum AdminChannel {
+  TELEGRAM
+  WHATSAPP
+  EMAIL
 }
 
 enum UserRole {
@@ -159,7 +170,9 @@ model Board {
   channels         BoardChannel[]
   channelInvites   ChannelInvite[]
   aiProviderConfig AIProviderConfig?
-  usageLogs        UsageLog[]
+  usageLogs         UsageLog[]
+  agentRuns         AgentRun[]
+  supervisorActions SupervisorAction[]
 
   @@map("boards")
 }
@@ -197,36 +210,50 @@ enum BoardRole {
 }
 
 model State {
-  id                      String    @id @default(cuid())
+  id                      String      @id @default(cuid())
   boardId                 String
   name                    String
-  type                    StateType @default(MESSAGE)
+  type                    StateType   @default(MESSAGE)
   mission                 String?
   rules                   String?
-  orderIndex              Int       @default(0)
-  isActive                Boolean   @default(true)
-  autoTransition          Boolean   @default(false)
+  orderIndex              Int         @default(0)
+  isActive                Boolean     @default(true)
+  autoTransition          Boolean     @default(false)
   nextStateId             String?
   config                  Json?
   fieldDefinitions        Json?
   behaviorMode            String?
-  dataToCollect           Json      @default("[]")
+  dataToCollect           Json        @default("[]")
   completionRule          String?
-  availableTools          Json      @default("[]")
+  availableTools          Json        @default("[]")
   escalateOnNoReply       Int?
-  escalateOnLowConfidence Boolean   @default(true)
-  escalateOnOffMission    Boolean   @default(true)
-  maxFollowups            Int       @default(3)
-  followupAction          String    @default("escalate")
+  escalateOnLowConfidence Boolean     @default(true)
+  escalateOnOffMission    Boolean     @default(true)
+  maxFollowups            Int         @default(3)
+  followupAction          String      @default("escalate")
   followupTargetState     String?
-  allowChannelSwitch      Boolean   @default(true)
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  allowChannelSwitch      Boolean     @default(true)
+
+  // === Sub-Agent Configuration ===
+  agentRole           String?
+  agentSystemPrompt   String?     @db.Text
+  agentGoal           String?     @db.Text
+
+  // === Handoff Engine ===
+  handoffMode         HandoffMode          @default(HYBRID)
+  handoffRules        Json                 @default("[]")
+  minAgentConfidence  Float                @default(0.7)
+  nextStateOnFail     String?
+  autoApproveActions  SupervisorActionType[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   board         Board          @relation("BoardStates", fields: [boardId], references: [id], onDelete: Cascade)
   leads         Lead[]         @relation("LeadCurrentState")
   conversations Conversation[] @relation("ConversationCurrentState")
   assetLinks    AssetState[]
+  agentRuns     AgentRun[]
 
   @@map("states")
 }
@@ -239,12 +266,18 @@ enum StateType {
   WAIT
 }
 
+enum HandoffMode {
+  LLM_ONLY
+  RULE_ONLY
+  HYBRID
+}
+
 // ============================================
 // LEADS (CRM-Kontakt)
 // ============================================
 
 model Lead {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   boardId        String
   currentStateId String?
   assignedToId   String?
@@ -252,23 +285,25 @@ model Lead {
   phone          String?
   email          String?
   avatar         String?
-  source         String?  @default("manual")
-  channel        String?  @default("whatsapp")
-  tags           String[] @default([])
-  leadScore      Int      @default(0)
+  source         String?   @default("manual")
+  channel        String?   @default("whatsapp")
+  tags           String[]  @default([])
+  leadScore      Int       @default(0)
   stateHistory   Json?
   stageMovedAt   DateTime?
   stageMovedBy   String?
-  customData     Json     @default("{}")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  customData     Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  board          Board           @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  currentState   State?          @relation("LeadCurrentState", fields: [currentStateId], references: [id])
-  assignedTo     User?           @relation("LeadAssignee", fields: [assignedToId], references: [id])
-  conversations  Conversation[]
-  memories       LeadMemory[]
-  channelInvites ChannelInvite[]
+  board             Board              @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  currentState      State?             @relation("LeadCurrentState", fields: [currentStateId], references: [id])
+  assignedTo        User?              @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  conversations     Conversation[]
+  memories          LeadMemory[]
+  channelInvites    ChannelInvite[]
+  agentRuns         AgentRun[]
+  supervisorActions SupervisorAction[]
 
   @@index([boardId, currentStateId])
   @@map("leads")
@@ -300,12 +335,14 @@ model Conversation {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  lead          Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  board         Board          @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  currentState  State?         @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
-  messages      Message[]
-  executionLogs ExecutionLog[]
-  usageLogs     UsageLog[]
+  lead              Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  board             Board              @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  currentState      State?             @relation("ConversationCurrentState", fields: [currentStateId], references: [id])
+  messages          Message[]
+  executionLogs     ExecutionLog[]
+  usageLogs         UsageLog[]
+  agentRuns         AgentRun[]
+  supervisorActions SupervisorAction[]
 
   @@index([leadId, lastMessageAt])
   @@index([boardId, status, lastMessageAt])
@@ -360,6 +397,71 @@ enum MessageStatus {
   DELIVERED
   READ
   FAILED
+}
+
+// ============================================
+// AGENT RUNS (Sub-Agent Audit Log)
+// ============================================
+
+model AgentRun {
+  id             String @id @default(cuid())
+
+  // Context
+  conversationId String
+  leadId         String
+  stateId        String
+  boardId        String
+
+  // Prompt & Input
+  systemPromptUsed String @db.Text
+  userMessageInput String @db.Text
+  contextMessages  Json   @default("[]")
+
+  // LLM Details
+  model        String
+  provider     String
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  totalTokens  Int    @default(0)
+  costCents    Float  @default(0)
+  latencyMs    Int    @default(0)
+
+  // Output
+  agentResponse String? @db.Text
+  toolCallsMade Json    @default("[]")
+
+  // Handoff Decision
+  handoffProposed Boolean  @default(false)
+  handoffReason   String?  @db.Text
+  agentConfidence Float?
+  rulesPassed     Boolean?
+  ruleEvaluation  Json?
+  targetStateId   String?
+
+  // Outcome
+  outcome      AgentRunOutcome
+  errorMessage String?         @db.Text
+
+  createdAt DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  state        State        @relation(fields: [stateId], references: [id])
+  board        Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([boardId, createdAt])
+  @@index([leadId, createdAt])
+  @@map("agent_runs")
+}
+
+enum AgentRunOutcome {
+  SUCCESS_CONTINUE
+  SUCCESS_HANDOFF
+  HANDOFF_BLOCKED
+  TOOL_EXECUTION_FAILED
+  LLM_ERROR
+  ESCALATED
 }
 
 // ============================================
@@ -507,7 +609,6 @@ enum BrainAssetType {
 model Asset {
   id          String       @id @default(cuid())
   boardId     String
-  board       Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
   name        String
   description String?
   type        AssetType
@@ -517,9 +618,11 @@ model Asset {
   publicUrl   String
   tags        String[]     @default([])
   uploadedBy  String?
-  links       AssetState[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  board Board        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  links AssetState[]
 
   @@index([boardId])
   @@index([boardId, type])
@@ -530,10 +633,11 @@ model Asset {
 model AssetState {
   id        String   @id @default(cuid())
   assetId   String
-  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
   stateId   String
-  state     State    @relation(fields: [stateId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  state State @relation(fields: [stateId], references: [id], onDelete: Cascade)
 
   @@unique([assetId, stateId])
   @@index([stateId])
@@ -769,24 +873,34 @@ model UsageLog {
 // ============================================
 
 model AdminNotification {
-  id        String                @id @default(cuid())
-  type      AdminNotificationType
-  title     String
-  body      String
-  read      Boolean               @default(false)
-  boardId   String?
-  leadId    String?
-  jobId     String?
-  createdAt DateTime              @default(now())
+  id                 String            @id @default(cuid())
+  boardId            String?
+  leadId             String?
+  level              NotificationLevel @default(INFO)
+  title              String
+  message            String            @db.Text
+  metadata           Json              @default("{}")
+  telegramSent       Boolean           @default(false)
+  telegramMessageId  String?
+  acknowledgedAt     DateTime?
+  acknowledgedBy     String?
+  channel            AdminChannel?
+  recipientId        String?
+  supervisorActionId String?
+  createdAt          DateTime          @default(now())
 
-  @@index([read, createdAt])
+  supervisorAction SupervisorAction? @relation(fields: [supervisorActionId], references: [id])
+
+  @@index([level, createdAt])
+  @@index([boardId, createdAt])
   @@map("admin_notifications")
 }
 
-enum AdminNotificationType {
-  FAILED_JOB
-  LEAD_STUCK
-  SYSTEM_ERROR
+enum NotificationLevel {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
 }
 
 // ============================================
@@ -803,4 +917,94 @@ model ProcessedWebhook {
   @@unique([externalId, channel, boardId])
   @@index([processedAt])
   @@map("processed_webhooks")
+}
+
+// ============================================
+// SUPERVISOR AGENT
+// ============================================
+
+model SupervisorAction {
+  id             String               @id @default(cuid())
+
+  // Context
+  boardId        String
+  leadId         String?
+  conversationId String?
+
+  // Trigger
+  triggerType    SupervisorTriggerType
+  triggerContext Json                 @default("{}")
+
+  // Decision
+  proposedAction SupervisorActionType
+  actionParams   Json                 @default("{}")
+  reasoning      String               @db.Text
+  urgency        SupervisorUrgency    @default(NORMAL)
+
+  // Approval
+  status                ApprovalStatus @default(PENDING_ADMIN)
+  notificationSentAt    DateTime?
+  notificationChannel   AdminChannel?
+  notificationMessageId String?
+  approverUserId        String?
+  approvedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectReason          String?
+
+  // Execution
+  executedAt      DateTime?
+  executionResult Json?
+  executionError  String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board        Board             @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  lead         Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversation Conversation?     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  approver     User?             @relation("ActionApprover", fields: [approverUserId], references: [id])
+  notifications AdminNotification[]
+
+  @@index([status, createdAt])
+  @@index([boardId, createdAt])
+  @@map("supervisor_actions")
+}
+
+enum SupervisorTriggerType {
+  AGENT_STUCK
+  HANDOFF_REPEATEDLY_BLOCKED
+  TOOL_FAILURE_PATTERN
+  NO_LEAD_REPLY_TIMEOUT
+  ESCALATION_REQUESTED
+  PERIODIC_AUDIT_FINDING
+  ON_DEMAND_QUERY
+}
+
+enum SupervisorActionType {
+  RESET_STATE
+  REASSIGN_TO_STATE
+  PAUSE_LEAD
+  RESUME_LEAD
+  FORCE_HANDOFF
+  NOTIFY_ONLY
+  KILL_CONVERSATION
+  UPDATE_LEAD_SCORE
+  REQUEST_HUMAN_TAKEOVER
+}
+
+enum SupervisorUrgency {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum ApprovalStatus {
+  PENDING_ADMIN
+  APPROVED
+  REJECTED
+  AUTO_APPROVED
+  EXECUTED
+  FAILED
+  EXPIRED
 }

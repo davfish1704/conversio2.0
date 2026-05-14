@@ -1,30 +1,31 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Bell, CheckCheck, AlertTriangle, Clock, Cpu } from "lucide-react"
+import { Bell, CheckCheck, AlertTriangle, Clock, Cpu, Info } from "lucide-react"
 
 interface AdminNotification {
   id: string
-  type: "FAILED_JOB" | "LEAD_STUCK" | "SYSTEM_ERROR"
+  level: "INFO" | "WARNING" | "ERROR" | "CRITICAL"
   title: string
-  body: string
-  read: boolean
+  message: string
+  acknowledgedAt: string | null
   boardId: string | null
   leadId: string | null
-  jobId: string | null
   createdAt: string
 }
 
-const TYPE_ICON = {
-  FAILED_JOB: Cpu,
-  LEAD_STUCK: Clock,
-  SYSTEM_ERROR: AlertTriangle,
+const LEVEL_ICON = {
+  INFO:     Info,
+  WARNING:  Clock,
+  ERROR:    Cpu,
+  CRITICAL: AlertTriangle,
 }
 
-const TYPE_COLOR = {
-  FAILED_JOB: "text-red-600 bg-red-50 dark:bg-red-900/20",
-  LEAD_STUCK: "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20",
-  SYSTEM_ERROR: "text-orange-600 bg-orange-50 dark:bg-orange-900/20",
+const LEVEL_COLOR = {
+  INFO:     "text-blue-600 bg-blue-50 dark:bg-blue-900/20",
+  WARNING:  "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20",
+  ERROR:    "text-red-600 bg-red-50 dark:bg-red-900/20",
+  CRITICAL: "text-orange-600 bg-orange-50 dark:bg-orange-900/20",
 }
 
 function fmtDate(iso: string) {
@@ -58,7 +59,7 @@ export default function AdminNotificationsContent() {
 
   async function markRead(id: string) {
     await fetch("/api/admin/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }) })
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n))
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, acknowledgedAt: new Date().toISOString() } : n))
   }
 
   return (
@@ -84,7 +85,7 @@ export default function AdminNotificationsContent() {
               </button>
             ))}
           </div>
-          {notifications.some((n) => !n.read) && (
+          {notifications.some((n) => !n.acknowledgedAt) && (
             <button
               onClick={markAllRead}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground border border-border rounded-lg hover:bg-muted hover:text-foreground transition-colors"
@@ -108,32 +109,32 @@ export default function AdminNotificationsContent() {
       ) : (
         <div className="space-y-2">
           {notifications.map((n) => {
-            const Icon = TYPE_ICON[n.type]
+            const Icon = LEVEL_ICON[n.level] ?? Info
+            const isUnread = !n.acknowledgedAt
             return (
               <div
                 key={n.id}
-                className={`bg-card rounded-xl border border-border p-4 flex gap-4 ${!n.read ? "border-l-4 border-l-primary" : ""}`}
+                className={`bg-card rounded-xl border border-border p-4 flex gap-4 ${isUnread ? "border-l-4 border-l-primary" : ""}`}
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${TYPE_COLOR[n.type]}`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${LEVEL_COLOR[n.level]}`}>
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
-                    <p className={`text-sm font-medium ${n.read ? "text-muted-foreground" : "text-foreground"}`}>
+                    <p className={`text-sm font-medium ${isUnread ? "text-foreground" : "text-muted-foreground"}`}>
                       {n.title}
                     </p>
                     <span className="text-xs text-muted-foreground flex-shrink-0 tabular-nums">{fmtDate(n.createdAt)}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5 break-words">{n.body}</p>
-                  {(n.boardId || n.leadId || n.jobId) && (
+                  <p className="text-xs text-muted-foreground mt-0.5 break-words">{n.message}</p>
+                  {(n.boardId || n.leadId) && (
                     <div className="flex flex-wrap gap-2 mt-1.5">
                       {n.boardId && <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">board:{n.boardId.slice(0, 8)}</span>}
                       {n.leadId && <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">lead:{n.leadId.slice(0, 8)}</span>}
-                      {n.jobId && <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">job:{n.jobId.slice(0, 8)}</span>}
                     </div>
                   )}
                 </div>
-                {!n.read && (
+                {isUnread && (
                   <button
                     onClick={() => markRead(n.id)}
                     className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"

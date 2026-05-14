@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db"
 import { transitionState, getCurrentState } from "@/lib/state-machine"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
-import { orchestrate } from "@/lib/orchestration"
+import { executeSubAgentRun } from "@/lib/agents/sub-agent-runtime"
 
 export interface ExecutionResult {
   skipped?: boolean
@@ -242,12 +242,7 @@ async function executeAIState(
   })
   const userMessage = lastInbound?.content ?? ""
 
-  const result = await orchestrate({
-    conversationId,
-    boardId,
-    channel: conversation.channel,
-    userMessage,
-  })
+  const result = await executeSubAgentRun({ conversationId, boardId, userMessage })
 
   if (state.escalateOnNoReply && result.responseText) {
     const delayMs = state.escalateOnNoReply * 60 * 60 * 1000

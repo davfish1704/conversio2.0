@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db"
 
-export type JobType = "process_message" | "escalation_check" | "summarize_conversation"
+export type JobType = "process_message" | "escalation_check" | "summarize_conversation" | "supervisor_execute"
 
 export interface JobPayload {
   conversationId?: string

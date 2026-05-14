@@ -86,12 +86,12 @@ export async function processNextBatch(limit = 10): Promise<number> {
           import("@/lib/notifications/admin-notify")
             .then(({ notifyAdmin }) =>
               notifyAdmin({
-                type: "FAILED_JOB",
-                title: `Job failed: ${job.type}`,
-                body: `Job ${id} failed after ${job.attempts} attempts: ${errorMsg.slice(0, 200)}`,
-                jobId: id,
+                level: "ERROR",
+                title: `Job fehlgeschlagen: ${job.type}`,
+                message: `Job ${id} fehlgeschlagen nach ${job.attempts} Versuchen: ${errorMsg.slice(0, 200)}`,
                 boardId: job.boardId ?? undefined,
                 leadId: job.leadId ?? undefined,
+                metadata: { jobId: id, jobType: job.type, attempts: job.attempts },
               }),
             )
             .catch(() => {})
@@ -130,6 +130,13 @@ async function executeJob(type: JobType, payload: JobPayload): Promise<void> {
       if (!payload.conversationId) throw new Error("Missing conversationId")
       const { summarizeConversation } = await import("@/lib/conversation-memory")
       await summarizeConversation(payload.conversationId)
+      break
+    }
+    case "supervisor_execute": {
+      const actionId = payload.supervisorActionId as string | undefined
+      if (!actionId) throw new Error("Missing supervisorActionId")
+      const { executeAction } = await import("@/lib/supervisor/executors/index")
+      await executeAction(actionId)
       break
     }
     default:
