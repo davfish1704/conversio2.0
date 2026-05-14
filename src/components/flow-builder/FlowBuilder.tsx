@@ -3,7 +3,7 @@
 import { useState, useContext } from "react"
 import { Plus, ArrowRight, KanbanSquare } from "lucide-react"
 import StateCard, { type State } from "./StateCard"
-import StateForm, { type StateFormData } from "./StateForm"
+import StateForm, { type StateFormData, type HandoffRule } from "./StateForm"
 import PromptGenerator, { type GeneratedState } from "./PromptGenerator"
 import { LanguageContext } from "@/lib/LanguageContext"
 
@@ -43,6 +43,14 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
     escalateOnNoReply: data.escalateOnNoReply ?? null,
     maxFollowups: data.maxFollowups ?? 3,
     followupAction: data.followupAction || "escalate",
+    allowChannelSwitch: data.allowChannelSwitch ?? true,
+    agentRole: data.agentRole || null,
+    agentSystemPrompt: data.agentSystemPrompt || null,
+    agentGoal: data.agentGoal || null,
+    handoffMode: data.handoffMode || "HYBRID",
+    handoffRules: data.handoffRules ?? [],
+    minAgentConfidence: data.minAgentConfidence ?? 0.7,
+    nextStateOnFail: data.nextStateOnFail || null,
   })
 
   const handleCreate = async (data: StateFormData) => {
@@ -171,7 +179,16 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
                 escalateOnNoReply: editingState.escalateOnNoReply ?? null,
                 maxFollowups: editingState.maxFollowups ?? 3,
                 followupAction: editingState.followupAction || "escalate",
-                allowChannelSwitch: (editingState as State & { allowChannelSwitch?: boolean }).allowChannelSwitch ?? true,
+                allowChannelSwitch: editingState.allowChannelSwitch ?? true,
+                agentRole: editingState.agentRole || "",
+                agentSystemPrompt: editingState.agentSystemPrompt || "",
+                agentGoal: editingState.agentGoal || "",
+                handoffMode: editingState.handoffMode || "HYBRID",
+                handoffRules: Array.isArray(editingState.handoffRules)
+                  ? (editingState.handoffRules as HandoffRule[])
+                  : [],
+                minAgentConfidence: editingState.minAgentConfidence ?? 0.7,
+                nextStateOnFail: editingState.nextStateOnFail ?? null,
               }
             : undefined
         }

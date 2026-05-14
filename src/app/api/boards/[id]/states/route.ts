@@ -54,7 +54,9 @@ export async function POST(
       name, orderIndex, mission, type, rules, nextStateId, config,
       dataToCollect, completionRule, availableTools,
       behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
-      escalateOnNoReply, maxFollowups, followupAction,
+      escalateOnNoReply, maxFollowups, followupAction, allowChannelSwitch,
+      agentRole, agentSystemPrompt, agentGoal,
+      handoffMode, handoffRules, minAgentConfidence, nextStateOnFail,
     } = body
 
     if (!name) {
@@ -101,6 +103,14 @@ export async function POST(
         escalateOnNoReply: escalateOnNoReply ?? null,
         maxFollowups: maxFollowups ?? 3,
         followupAction: followupAction || "escalate",
+        allowChannelSwitch: allowChannelSwitch ?? true,
+        agentRole: agentRole || null,
+        agentSystemPrompt: agentSystemPrompt || null,
+        agentGoal: agentGoal || null,
+        handoffMode: handoffMode || "HYBRID",
+        handoffRules: Array.isArray(handoffRules) ? handoffRules : [],
+        minAgentConfidence: typeof minAgentConfidence === "number" ? minAgentConfidence : 0.7,
+        nextStateOnFail: nextStateOnFail || null,
       },
     })
 
@@ -126,7 +136,9 @@ export async function PUT(
       id: stateId, name, mission, type, rules, orderIndex, nextStateId, config,
       dataToCollect, completionRule, availableTools,
       behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
-      escalateOnNoReply, maxFollowups, followupAction,
+      escalateOnNoReply, maxFollowups, followupAction, allowChannelSwitch,
+      agentRole, agentSystemPrompt, agentGoal,
+      handoffMode, handoffRules, minAgentConfidence, nextStateOnFail,
     } = body
 
     if (!stateId) {
@@ -173,6 +185,14 @@ export async function PUT(
         ...(escalateOnNoReply !== undefined ? { escalateOnNoReply: escalateOnNoReply ?? null } : {}),
         ...(maxFollowups !== undefined ? { maxFollowups: maxFollowups ?? 3 } : {}),
         ...(followupAction !== undefined ? { followupAction: followupAction || "escalate" } : {}),
+        ...(allowChannelSwitch !== undefined ? { allowChannelSwitch } : {}),
+        ...(agentRole !== undefined ? { agentRole: agentRole || null } : {}),
+        ...(agentSystemPrompt !== undefined ? { agentSystemPrompt: agentSystemPrompt || null } : {}),
+        ...(agentGoal !== undefined ? { agentGoal: agentGoal || null } : {}),
+        ...(handoffMode !== undefined ? { handoffMode } : {}),
+        ...(handoffRules !== undefined ? { handoffRules: Array.isArray(handoffRules) ? handoffRules : [] } : {}),
+        ...(minAgentConfidence !== undefined ? { minAgentConfidence: typeof minAgentConfidence === "number" ? minAgentConfidence : 0.7 } : {}),
+        ...(nextStateOnFail !== undefined ? { nextStateOnFail: nextStateOnFail || null } : {}),
       },
     })
 

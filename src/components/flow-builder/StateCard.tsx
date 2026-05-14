@@ -22,6 +22,15 @@ export interface State {
   escalateOnNoReply?: number | null
   maxFollowups?: number
   followupAction?: string
+  allowChannelSwitch?: boolean
+  // Sub-Agent fields
+  agentRole?: string | null
+  agentSystemPrompt?: string | null
+  agentGoal?: string | null
+  handoffMode?: string
+  handoffRules?: unknown
+  minAgentConfidence?: number
+  nextStateOnFail?: string | null
 }
 
 const typeColors: Record<string, string> = {
