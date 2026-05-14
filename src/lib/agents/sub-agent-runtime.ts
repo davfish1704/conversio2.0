@@ -170,6 +170,10 @@ export async function executeSubAgentRun(
   // ── Step 7: LLM Call + Tool Loop ──────────────────────────────────────────
 
   let finalContent: string | null = null
+  let latestContent: string | null = null  // best text seen across all iterations
+  type ContentStrategy = "natural" | "rescued" | "forced"
+  let usedStrategy: ContentStrategy = "natural"
+  let iterationsUsed = 0
   let handoffCalled = false
   let handoffReason: string | null = null
   let agentConfidence: number | null = null
@@ -231,9 +235,13 @@ export async function executeSubAgentRun(
         },
       }).catch((e: unknown) => console.error("[AgentRuntime] UsageLog write failed:", e))
 
-      // No tool calls → final response
+      iterationsUsed = iteration + 1
+      if (response.content?.trim()) latestContent = response.content
+
+      // No tool calls → natural completion
       if (!response.toolCalls?.length) {
         finalContent = response.content ?? null
+        usedStrategy = "natural"
         break
       }
 
@@ -277,13 +285,66 @@ export async function executeSubAgentRun(
       // If handoff was proposed, one more pass so the agent can say goodbye
       if (handoffCalled && iteration === 0) continue
 
-      // Stop looping if escalated or handoff proposed
-      if (handoffCalled || outcome === "ESCALATED") break
+      // Stop looping if escalated or handoff proposed — rescue latest text before exit
+      if (handoffCalled || outcome === "ESCALATED") {
+        if (!finalContent && latestContent) {
+          finalContent = latestContent
+          usedStrategy = "rescued"
+        }
+        break
+      }
     }
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err)
     outcome = "LLM_ERROR"
     console.error("[AgentRuntime] LLM-Fehler:", errorMessage)
+  }
+
+  // Post-loop rescue: if loop exhausted without break and latestContent exists
+  if (!finalContent && latestContent && outcome !== "LLM_ERROR") {
+    finalContent = latestContent
+    usedStrategy = "rescued"
+  }
+
+  // ── Step 7b: Forced Final Iteration if Still No Content ───────────────────
+
+  if (!finalContent && outcome !== "LLM_ERROR") {
+    console.log("[AgentRuntime] No content from main loop — forcing final iteration without tools")
+    try {
+      const forced = await aiRegistry.execute({
+        boardId,
+        purpose: "main",
+        messages: [
+          ...messages,
+          { role: "system" as const, content: "Gib jetzt deine abschließende Antwort an den User. Rufe keine Tools auf." },
+        ],
+        tools: undefined,
+        temperature: brain.temperature ?? 0.7,
+        maxTokens: brain.maxTokens ?? 1024,
+      })
+      totalInputTokens  += forced.usage?.inputTokens  ?? 0
+      totalOutputTokens += forced.usage?.outputTokens ?? 0
+      totalCostCents    += (forced.providerCost ?? 0) * 100
+      await prisma.usageLog.create({
+        data: {
+          boardId,
+          conversationId,
+          model:        forced.model    ?? usedModel    ?? "unknown",
+          provider:     forced.provider ?? usedProvider ?? "unknown",
+          inputTokens:  forced.usage?.inputTokens  ?? 0,
+          outputTokens: forced.usage?.outputTokens ?? 0,
+          totalTokens:  forced.usage?.totalTokens  ?? 0,
+          providerCost: forced.providerCost ?? 0,
+        },
+      }).catch(() => {})
+      if (forced.content?.trim()) {
+        finalContent = forced.content
+        usedStrategy = "forced"
+        iterationsUsed += 1
+      }
+    } catch (e: unknown) {
+      console.error("[AgentRuntime] Forced iteration fehlgeschlagen:", e)
+    }
   }
 
   // ── Step 8: Sanitize Output ────────────────────────────────────────────────
@@ -375,6 +436,8 @@ export async function executeSubAgentRun(
       errorMessage:     errorMessage ?? null,
     },
   }).catch((e: unknown) => console.error("[AgentRuntime] AgentRun-Persistierung fehlgeschlagen:", e))
+
+  console.log(`[AgentRuntime] contentStrategy=${usedStrategy} iterations=${iterationsUsed} hasResponse=${!!cleanedText}`)
 
   // ── Step 11: Send Message ──────────────────────────────────────────────────
 
