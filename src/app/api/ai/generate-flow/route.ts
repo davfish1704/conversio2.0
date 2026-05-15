@@ -12,6 +12,20 @@ interface GeneratedState {
   agentGoal?: string
 }
 
+function extractJson(text: string): string {
+  const withoutFences = text
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim()
+
+  const match = withoutFences.match(/[\[{][\s\S]*[\]}]/)
+  if (!match) {
+    throw new Error("No JSON found in response")
+  }
+
+  return match[0]
+}
+
 function validateStates(states: any[]): GeneratedState[] {
   return states.map((s, i) => {
     const normalized = normalizeState(s)
@@ -59,10 +73,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    let cleaned: string
+    try {
+      cleaned = extractJson(content)
+    } catch {
+      console.error("[generate-flow] Raw AI response:", content)
+      return NextResponse.json(
+        { error: "AI response did not contain valid JSON. Please try again." },
+        { status: 422 }
+      )
+    }
+
     let parsed: any
     try {
-      parsed = JSON.parse(content)
-    } catch {
+      parsed = JSON.parse(cleaned)
+    } catch (e) {
+      console.error("[generate-flow] Raw AI response:", content)
+      console.error("[generate-flow] Cleaned response:", cleaned)
+      console.error("[generate-flow] Parse error:", e)
       return NextResponse.json(
         { error: "AI response was not valid JSON. Please describe the flow in more detail." },
         { status: 422 }
