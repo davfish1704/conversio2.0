@@ -37,8 +37,6 @@ export async function POST(
     agentSystemPrompt: null,
     handoffMode:       "LLM_ONLY",
     stateName:         state ?? "Simulation",
-    stateMission:      mission ?? null,
-    stateRules:        null,
     dataToCollect:     [],
     brain: {
       systemPrompt: brainConfig.systemPrompt,

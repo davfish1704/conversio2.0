@@ -83,7 +83,6 @@ Wenn der Lead keinen Termin möchte oder eskaliert, nutze escalate_to_human.`,
       name: "Termin bestätigt",
       type: "WAIT",
       orderIndex: 3,
-      mission: "Lead hat Termin vereinbart. Wartet auf manuellen Follow-up durch Makler.",
     },
   ],
 }

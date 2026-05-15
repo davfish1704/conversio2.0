@@ -22,10 +22,8 @@ export interface PromptBuilderInput {
   agentGoal: string | null
   handoffMode: string
 
-  // Classic state fields (may still carry useful context)
+  // Classic state fields
   stateName: string
-  stateMission: string | null
-  stateRules: string | null
   dataToCollect: string[]
 
   // Brain / Board config
@@ -58,8 +56,6 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
   // ── Section 2: Agent Goal ──────────────────────────────────────────────────
   if (input.agentGoal) {
     parts.push(`## Dein Ziel in diesem State\n${input.agentGoal}`)
-  } else if (input.stateMission) {
-    parts.push(`## Dein Ziel in diesem State\n${input.stateMission}`)
   }
 
   // ── Section 3: Detailed Instructions ──────────────────────────────────────
@@ -76,11 +72,6 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
   }
   if (input.brain.rulePrompt) {
     parts.push(`## Board-Regeln\n${input.brain.rulePrompt}`)
-  }
-
-  // Classic stateRules as behavioral guardrails if no agentSystemPrompt
-  if (!input.agentSystemPrompt && input.stateRules) {
-    parts.push(`## Verhaltensregeln\n${input.stateRules}`)
   }
 
   // ── Section 5: Knowledge Base ──────────────────────────────────────────────

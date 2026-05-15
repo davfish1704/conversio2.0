@@ -5,7 +5,6 @@ import { aiRegistry } from "@/lib/ai/registry"
 interface GeneratedState {
   name: string
   type: string
-  mission: string
   rules: string
   orderIndex: number
   config: any
@@ -15,8 +14,7 @@ function validateStates(states: any[]): GeneratedState[] {
   return states.map((s, i) => ({
     name: typeof s.name === "string" ? s.name : `State ${i + 1}`,
     type: ["AI", "MESSAGE", "TEMPLATE", "CONDITION", "WAIT"].includes(s.type?.toUpperCase()) ? s.type.toUpperCase() : "MESSAGE",
-    mission: typeof s.mission === "string" ? s.mission : (typeof s.message === "string" ? s.message : ""),
-    rules: typeof s.rules === "string" ? s.rules : (typeof s.nextState === "string" ? `Next: ${s.nextState}` : ""),
+    rules: typeof s.rules === "string" ? s.rules : "",
     orderIndex: typeof s.orderIndex === "number" ? s.orderIndex : i,
     config: s.config && typeof s.config === "object" ? s.config : {},
   }))

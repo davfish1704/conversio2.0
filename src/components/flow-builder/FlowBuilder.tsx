@@ -29,7 +29,6 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
   const buildStatePayload = (data: StateFormData) => ({
     name: data.name,
     type: data.type,
-    mission: data.mission || null,
     rules: data.rules || null,
     orderIndex: data.orderIndex,
     nextStateId: data.nextStateId,
@@ -163,7 +162,6 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
                 id: editingState.id,
                 name: editingState.name,
                 type: editingState.type,
-                mission: editingState.mission || "",
                 rules: editingState.rules || "",
                 orderIndex: editingState.orderIndex,
                 nextStateId: editingState.nextStateId,

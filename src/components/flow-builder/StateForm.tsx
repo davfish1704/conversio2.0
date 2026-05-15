@@ -22,7 +22,6 @@ export interface StateFormData {
   id?: string
   name: string
   type: string
-  mission: string
   rules: string
   orderIndex: number
   nextStateId: string | null
@@ -93,7 +92,7 @@ const ALL_TOOLS = [
 const DEFAULT_AI_TOOLS = ["update_lead_data", "advance_state", "escalate_to_human"]
 
 const EMPTY_FORM: StateFormData = {
-  name: "", type: "MESSAGE", mission: "", rules: "", orderIndex: 0,
+  name: "", type: "MESSAGE", rules: "", orderIndex: 0,
   nextStateId: null, config: {}, dataToCollect: "", completionRule: "",
   availableTools: DEFAULT_AI_TOOLS, behaviorMode: "inherit",
   escalateOnLowConfidence: true, escalateOnOffMission: true,
@@ -263,20 +262,16 @@ export default function StateForm({
             </select>
           </div>
 
-          {/* ── Mission + Rules (all types) ── */}
-          <div>
-            <label className={labelClass}>{t("stateForm.mission")}</label>
-            <p className={hintClass}>{t("stateForm.missionDesc")}</p>
-            <textarea value={form.mission} onChange={(e) => setForm({ ...form, mission: e.target.value })}
-              className={taClass} rows={2} placeholder={t("stateForm.missionPlaceholder")} />
-          </div>
-
-          <div>
-            <label className={labelClass}>{t("stateForm.rules")}</label>
-            <p className={hintClass}>{t("stateForm.rulesDesc")}</p>
-            <textarea value={form.rules} onChange={(e) => setForm({ ...form, rules: e.target.value })}
-              className={taClass} rows={2} placeholder={t("stateForm.rulesPlaceholder")} />
-          </div>
+          {/* ── Condition Expression (CONDITION states only) ── */}
+          {form.type === "CONDITION" && (
+            <div>
+              <label className={labelClass}>Condition Expression</label>
+              <p className={hintClass}>Routing-Logik für diesen CONDITION-State</p>
+              <textarea value={form.rules} onChange={(e) => setForm({ ...form, rules: e.target.value })}
+                className={taClass} rows={2}
+                placeholder="IF leadScore >= 50 THEN advance" />
+            </div>
+          )}
 
           {/* ── Next State (all types) ── */}
           <div>

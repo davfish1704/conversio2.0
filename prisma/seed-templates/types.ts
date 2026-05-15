@@ -11,7 +11,6 @@ export interface StateTemplate {
   handoffMode?: HandoffMode
   handoffRules?: HandoffRule[]
   minAgentConfidence?: number
-  mission?: string
   rules?: string
   availableTools?: string[]
   dataToCollect?: string[]

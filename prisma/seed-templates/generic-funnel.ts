@@ -77,7 +77,6 @@ Rufe danach handoff_proposed auf.`,
       name: "Abschluss",
       type: "WAIT",
       orderIndex: 3,
-      mission: "Lead ist vollständig qualifiziert. Übergabe an Vertrieb für manuellen Abschluss.",
     },
   ],
 }

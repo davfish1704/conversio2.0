@@ -5,7 +5,7 @@ import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-acces
 
 /**
  * POST /api/boards/[id]/states/bulk
- * Body: { states: Array<{ name, type, mission, rules, orderIndex, config }>, mode: "append" | "replace" }
+ * Body: { states: Array<{ name, type, rules, orderIndex, config }>, mode: "append" | "replace" }
  * Creates multiple states in a single transaction.
  */
 export async function POST(
@@ -67,7 +67,6 @@ export async function POST(
             name: s.name,
             boardId: params.id,
             type: s.type || "MESSAGE",
-            mission: s.mission || null,
             rules: s.rules || null,
             orderIndex: startOrderIndex + (s.orderIndex ?? index),
             config: s.config || null,

@@ -49,7 +49,6 @@ export async function executeStateForConversation(
     id: string
     name: string
     type: string
-    mission: string | null
     rules: string | null
     config: unknown
     nextStateId: string | null
@@ -223,7 +222,6 @@ async function executeAIState(
   state: {
     id: string
     name: string
-    mission: string | null
     rules: string | null
     type: string
     nextStateId: string | null

@@ -18,8 +18,6 @@ export interface State {
   id: string
   name: string
   type: string
-  mission: string | null
-  rules: string | null
   config: unknown
 }
 

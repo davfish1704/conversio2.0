@@ -51,7 +51,7 @@ export async function POST(
   try {
     const body = await req.json()
     const {
-      name, orderIndex, mission, type, rules, nextStateId, config,
+      name, orderIndex, type, rules, nextStateId, config,
       dataToCollect, completionRule, availableTools,
       behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
       escalateOnNoReply, maxFollowups, followupAction, allowChannelSwitch,
@@ -89,7 +89,6 @@ export async function POST(
         name,
         boardId: params.id,
         orderIndex: orderIndex ?? 0,
-        mission: mission || null,
         type: type || 'MESSAGE',
         rules: rules || null,
         nextStateId: nextStateId || null,
@@ -133,7 +132,7 @@ export async function PUT(
   try {
     const body = await req.json()
     const {
-      id: stateId, name, mission, type, rules, orderIndex, nextStateId, config,
+      id: stateId, name, type, rules, orderIndex, nextStateId, config,
       dataToCollect, completionRule, availableTools,
       behaviorMode, escalateOnLowConfidence, escalateOnOffMission,
       escalateOnNoReply, maxFollowups, followupAction, allowChannelSwitch,
@@ -170,7 +169,6 @@ export async function PUT(
       where: { id: stateId },
       data: {
         name,
-        mission: mission || null,
         type: type || 'MESSAGE',
         rules: rules || null,
         orderIndex: orderIndex !== undefined ? orderIndex : undefined,

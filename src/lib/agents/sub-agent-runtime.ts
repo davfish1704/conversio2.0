@@ -111,8 +111,6 @@ export async function executeSubAgentRun(
     dataToCollect: unknown
     availableTools: unknown
     escalateOnNoReply: number | null
-    mission: string | null
-    rules: string | null
   }
 
   const brainForPrompt: SubAgentBrain = {
@@ -133,8 +131,6 @@ export async function executeSubAgentRun(
     agentGoal:         stateData.agentGoal,
     handoffMode:       stateData.handoffMode ?? "HYBRID",
     stateName:         state.name,
-    stateMission:      stateData.mission,
-    stateRules:        stateData.rules,
     dataToCollect:     (stateData.dataToCollect as string[]) ?? [],
     brain:             brainForPrompt,
     knowledge,

@@ -189,7 +189,7 @@ await test("Alle Template-States haben Pflichtfelder", async () => {
   }
 })
 
-await test("AI-States in Templates haben agentRole oder mission", async () => {
+await test("AI-States in Templates haben agentRole", async () => {
   const templates = await Promise.all([
     import("../prisma/seed-templates/insurance").then((m) => m.insuranceTemplate),
     import("../prisma/seed-templates/real-estate").then((m) => m.realEstateTemplate),
@@ -199,8 +199,8 @@ await test("AI-States in Templates haben agentRole oder mission", async () => {
   for (const tmpl of templates) {
     for (const state of tmpl.states) {
       if (state.type === "AI") {
-        const hasRole = !!state.agentRole || !!state.mission
-        assert(hasRole, `AI-State "${state.name}" in "${tmpl.name}" hat weder agentRole noch mission`)
+        const hasRole = !!state.agentRole
+        assert(hasRole, `AI-State "${state.name}" in "${tmpl.name}" hat keine agentRole`)
       }
     }
   }

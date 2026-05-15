@@ -14,8 +14,6 @@ interface BrainConfig {
 interface StateConfig {
   name: string
   type: string
-  mission: string | null
-  rules: string | null
   dataToCollect?: string[]
 }
 
@@ -60,8 +58,6 @@ export function buildPrompt(
   parts.push(`\nBOARD-REGELN: ${brain.rulePrompt || ""}`)
 
   parts.push(`\n---\nAKTUELLER STATE: ${state.name}`)
-  parts.push(`MISSION: ${state.mission || "Hilf dem Kunden."}`)
-  if (state.rules) parts.push(`STATE-REGELN: ${state.rules}`)
 
   const dataToCollect = state.dataToCollect || []
   if (dataToCollect.length > 0) {

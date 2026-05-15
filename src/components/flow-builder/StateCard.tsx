@@ -8,7 +8,6 @@ export interface State {
   id: string
   name: string
   type: string
-  mission: string | null
   rules: string | null
   orderIndex: number
   nextStateId: string | null
@@ -96,10 +95,10 @@ export default function StateCard({ state, onEdit, onDelete, nextStateName }: St
       </div>
 
       <div className="p-4 flex-1 space-y-3">
-        {state.mission ? (
+        {state.type === "CONDITION" && state.rules ? (
           <div>
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t("stateCard.mission")}</p>
-            <p className="text-sm text-foreground line-clamp-3">{state.mission}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Condition</p>
+            <p className="text-sm text-foreground line-clamp-3">{state.rules}</p>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">{t("stateCard.noMissionDefined")}</p>

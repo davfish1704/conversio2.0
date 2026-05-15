@@ -117,7 +117,6 @@ async function seedStates(
         handoffMode:             s.handoffMode            ?? "HYBRID",
         handoffRules:            s.handoffRules           ?? [],
         minAgentConfidence:      s.minAgentConfidence     ?? 0.7,
-        mission:                 s.mission                ?? null,
         rules:                   s.rules                  ?? null,
         availableTools:          s.availableTools         ?? [],
         dataToCollect:           s.dataToCollect          ?? [],

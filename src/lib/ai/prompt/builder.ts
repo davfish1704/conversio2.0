@@ -16,8 +16,6 @@ export interface PromptState {
   id: string
   name: string
   type: string
-  mission: string | null
-  rules: string | null
   nextStateId?: string | null
   dataToCollect?: string[]
   completionRule?: string | null
@@ -38,7 +36,6 @@ export interface PromptKnowledge {
 export interface PromptTransition {
   fromState: string | null
   toState: string
-  mission: string | null
 }
 
 export interface PromptOptions {
@@ -113,8 +110,6 @@ export function buildSystemPrompt(
   }
 
   parts.push(`\nCURRENT STATE: ${state.name}`)
-  if (state.mission) parts.push(`MISSION: ${state.mission}`)
-  if (state.rules) parts.push(`BEHAVIOR RULES: ${state.rules}`)
 
   if (memories.length > 0) {
     parts.push(`\nMEMORY:\n${memories.map((m) => `${m.key}: ${m.value}`).join("\n")}`)

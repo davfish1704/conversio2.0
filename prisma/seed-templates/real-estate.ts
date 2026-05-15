@@ -78,7 +78,6 @@ Rufe danach handoff_proposed auf.`,
       name: "In Bearbeitung",
       type: "WAIT",
       orderIndex: 3,
-      mission: "Profil komplett. Makler prüft Objektmatch und kontaktiert Lead persönlich.",
     },
   ],
 }

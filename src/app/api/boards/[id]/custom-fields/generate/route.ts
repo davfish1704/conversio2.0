@@ -11,9 +11,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const states = await prisma.state.findMany({
     where: { boardId: params.id, isActive: true, type: "AI" },
-    select: { name: true, mission: true, dataToCollect: true },
+    select: { name: true, agentGoal: true, dataToCollect: true },
   })
-  const missions = states.map(s => s.mission || "").filter(Boolean).join("\n\n")
+  const missions = states.map(s => s.agentGoal || "").filter(Boolean).join("\n\n")
   if (!missions) return NextResponse.json({ fields: [] })
 
   const response = await aiRegistry.execute({

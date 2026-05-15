@@ -7,7 +7,6 @@ import { LanguageContext } from "@/lib/LanguageContext"
 export interface GeneratedState {
   name: string
   type: string
-  mission: string
   rules: string
   orderIndex: number
   config: Record<string, unknown>
@@ -176,9 +175,6 @@ export default function PromptGenerator({ boardId: _boardId, existingStatesCount
                       {typeLabels[state.type] || state.type}
                     </span>
                   </div>
-                  {state.mission && (
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{state.mission}</p>
-                  )}
                   {state.config && state.type === "MESSAGE" && state.config.text != null && (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-1 italic">
                       &quot;{String(state.config.text)}&quot;

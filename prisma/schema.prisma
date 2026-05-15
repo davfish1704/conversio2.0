@@ -214,7 +214,7 @@ model State {
   boardId                 String
   name                    String
   type                    StateType   @default(MESSAGE)
-  mission                 String?
+  // CONDITION routing only — parsed by state-machine.ts. NOT for AI prompts.
   rules                   String?
   orderIndex              Int         @default(0)
   isActive                Boolean     @default(true)
