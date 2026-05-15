@@ -231,8 +231,14 @@ export async function DELETE(
       return jsonError("You don't have permission for this action.", "FORBIDDEN", 403)
     }
 
-    await prisma.state.delete({
-      where: { id: stateId },
+    await prisma.$transaction(async (tx) => {
+      await tx.agentRun.deleteMany({
+        where: { stateId },
+      })
+
+      await tx.state.delete({
+        where: { id: stateId },
+      })
     })
 
     return NextResponse.json({ success: true })

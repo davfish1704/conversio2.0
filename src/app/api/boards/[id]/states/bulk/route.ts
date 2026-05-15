@@ -44,8 +44,18 @@ export async function POST(
 
     // If replace mode, delete existing states first
     if (mode === "replace") {
-      await prisma.state.deleteMany({
-        where: { boardId: params.id },
+      await prisma.$transaction(async (tx) => {
+        await tx.agentRun.deleteMany({
+          where: {
+            state: {
+              boardId: params.id,
+            },
+          },
+        })
+
+        await tx.state.deleteMany({
+          where: { boardId: params.id },
+        })
       })
     }
 
