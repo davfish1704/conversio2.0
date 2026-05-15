@@ -166,6 +166,7 @@ export function sanitizeAIOutput(text: string): string {
 
   cleaned = cleaned.replace(/<function=[^>]+>[^<]*<\/function>/gi, "")
   cleaned = cleaned.replace(/<function=[^>]+\/>/gi, "")
+  cleaned = cleaned.replace(/<function\(\w+\)[\s\S]*?<\/function>/gi, "")
   cleaned = cleaned.replace(/\{?\s*"function"\s*:\s*"[^"]+"\s*\}?/gi, "")
   cleaned = cleaned.replace(
     /(?:Here(?:'s| is) the (?:result|response|output)(?::| of))?.*?(?:OK|FEHLER|ERROR):\s*\{[^}]*\}/gi,
