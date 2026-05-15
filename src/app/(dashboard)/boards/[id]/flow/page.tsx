@@ -14,6 +14,7 @@ interface State {
   orderIndex: number
   nextStateId: string | null
   config: Record<string, unknown> | null
+  agentGoal?: string | null
 }
 
 interface Board {

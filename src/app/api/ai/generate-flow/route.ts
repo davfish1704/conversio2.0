@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { aiRegistry } from "@/lib/ai/registry"
+import { normalizeState } from "@/lib/state-utils"
 
 interface GeneratedState {
   name: string
@@ -12,14 +13,17 @@ interface GeneratedState {
 }
 
 function validateStates(states: any[]): GeneratedState[] {
-  return states.map((s, i) => ({
-    name: typeof s.name === "string" ? s.name : `State ${i + 1}`,
-    type: ["AI", "MESSAGE", "TEMPLATE", "CONDITION", "WAIT"].includes(s.type?.toUpperCase()) ? s.type.toUpperCase() : "MESSAGE",
-    rules: typeof s.rules === "string" ? s.rules : "",
-    orderIndex: typeof s.orderIndex === "number" ? s.orderIndex : i,
-    config: s.config && typeof s.config === "object" ? s.config : {},
-    agentGoal: typeof s.agentGoal === "string" ? s.agentGoal : typeof s.mission === "string" ? s.mission : undefined,
-  }))
+  return states.map((s, i) => {
+    const normalized = normalizeState(s)
+    return {
+      name: typeof s.name === "string" ? s.name : `State ${i + 1}`,
+      type: ["AI", "MESSAGE", "TEMPLATE", "CONDITION", "WAIT"].includes(s.type?.toUpperCase()) ? s.type.toUpperCase() : "MESSAGE",
+      rules: typeof s.rules === "string" ? s.rules : "",
+      orderIndex: typeof s.orderIndex === "number" ? s.orderIndex : i,
+      config: s.config && typeof s.config === "object" ? s.config : {},
+      agentGoal: normalized.agentGoal ?? undefined,
+    }
+  })
 }
 
 export async function POST(req: NextRequest) {

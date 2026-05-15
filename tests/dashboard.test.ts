@@ -136,7 +136,7 @@ describe('Dashboard & Board System', () => {
           boardId: board.id,
           name: 'Neuer Lead',
           type: 'MESSAGE',
-          mission: 'Willkommensnachricht senden',
+          agentGoal: 'Willkommensnachricht senden',
           orderIndex: 0,
         },
       })
@@ -146,7 +146,7 @@ describe('Dashboard & Board System', () => {
           boardId: board.id,
           name: 'Beratung',
           type: 'AI',
-          mission: 'KI beantwortet FAQs',
+          agentGoal: 'KI beantwortet FAQs',
           orderIndex: 1,
         },
       })
