@@ -100,6 +100,11 @@ export default function StateCard({ state, onEdit, onDelete, nextStateName }: St
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Condition</p>
             <p className="text-sm text-foreground line-clamp-3">{state.rules}</p>
           </div>
+        ) : state.agentGoal ? (
+          <div>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{t("stateCard.mission")}</p>
+            <p className="text-sm text-foreground line-clamp-3">{state.agentGoal}</p>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">{t("stateCard.noMissionDefined")}</p>
         )}

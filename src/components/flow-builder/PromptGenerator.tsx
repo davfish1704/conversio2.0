@@ -10,6 +10,7 @@ export interface GeneratedState {
   rules: string
   orderIndex: number
   config: Record<string, unknown>
+  agentGoal?: string
 }
 
 interface PromptGeneratorProps {

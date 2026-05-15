@@ -80,6 +80,7 @@ export async function POST(
             rules: s.rules || null,
             orderIndex: startOrderIndex + (s.orderIndex ?? index),
             config: s.config || null,
+            agentGoal: s.agentGoal || null,
           },
         })
       )

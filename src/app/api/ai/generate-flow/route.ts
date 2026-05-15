@@ -8,6 +8,7 @@ interface GeneratedState {
   rules: string
   orderIndex: number
   config: any
+  agentGoal?: string
 }
 
 function validateStates(states: any[]): GeneratedState[] {
@@ -17,6 +18,7 @@ function validateStates(states: any[]): GeneratedState[] {
     rules: typeof s.rules === "string" ? s.rules : "",
     orderIndex: typeof s.orderIndex === "number" ? s.orderIndex : i,
     config: s.config && typeof s.config === "object" ? s.config : {},
+    agentGoal: typeof s.agentGoal === "string" ? s.agentGoal : typeof s.mission === "string" ? s.mission : undefined,
   }))
 }
 
