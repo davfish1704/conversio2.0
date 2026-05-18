@@ -6,6 +6,8 @@ import StateCard, { type State } from "./StateCard"
 import StateForm, { type StateFormData, type HandoffRule } from "./StateForm"
 import PromptGenerator, { type GeneratedState } from "./PromptGenerator"
 import { LanguageContext } from "@/lib/LanguageContext"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 interface FlowBuilderProps {
   states: State[]
@@ -97,16 +99,13 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-foreground">{t("flowBuilder.states")}</h2>
-          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full tabular-nums">{states.length}</span>
+          <h2 className="text-sm font-semibold text-text-primary">{t("flowBuilder.states")}</h2>
+          <span className="text-xs text-text-secondary bg-muted px-1.5 py-[1px] rounded-full tabular-nums">{states.length}</span>
         </div>
-        <button
-          onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
+        <Button size="sm" onClick={() => setIsFormOpen(true)}>
+          <Plus className="w-3.5 h-3.5" />
           {t("flowBuilder.addState")}
-        </button>
+        </Button>
       </div>
 
       <div className="overflow-x-auto pb-4">
@@ -120,23 +119,20 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
                 nextStateName={getNextStateName(state.nextStateId)}
               />
               {index < states.length - 1 && (
-                <ArrowRight className="w-5 h-5 text-border shrink-0" />
+                <ArrowRight className="w-5 h-5 text-text-tertiary shrink-0" />
               )}
             </div>
           ))}
 
           {states.length === 0 && (
-            <div className="w-72 bg-muted/30 rounded-xl border border-dashed border-border flex items-center justify-center p-8">
+            <div className="w-72 bg-muted/30 rounded-lg border border-dashed border-border flex items-center justify-center p-8">
               <div className="text-center">
-                <KanbanSquare className="w-9 h-9 text-muted-foreground/40 mx-auto mb-3" strokeWidth={1.5} />
-                <p className="text-sm text-muted-foreground mb-2">{t("flowBuilder.noStatesYet")}</p>
-                <button
-                  onClick={() => setIsFormOpen(true)}
-                  className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
-                >
+                <KanbanSquare className="w-8 h-8 text-text-tertiary mx-auto mb-3" strokeWidth={1.5} />
+                <p className="text-sm text-text-secondary mb-2">{t("flowBuilder.noStatesYet")}</p>
+                <Button size="xs" variant="ghost" onClick={() => setIsFormOpen(true)}>
                   {t("flowBuilder.createFirstState")}
-                </button>
-                <p className="text-xs text-muted-foreground mt-3">{t("flowBuilder.orUseAI")}</p>
+                </Button>
+                <p className="text-xs text-text-tertiary mt-3">{t("flowBuilder.orUseAI")}</p>
               </div>
             </div>
           )}
@@ -197,33 +193,23 @@ export default function FlowBuilder({ states, boardId, onChange }: FlowBuilderPr
 
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border p-6 rounded-xl w-full max-w-sm shadow-xl">
+          <div className="bg-bg-elevated border border-border p-5 rounded-lg w-full max-w-sm shadow-lg">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-destructive/10 rounded-full flex items-center justify-center shrink-0">
-                <svg className="w-5 h-5 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-9 h-9 bg-destructive/10 rounded-full flex items-center justify-center shrink-0">
+                <svg className="w-4 h-4 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-semibold text-foreground">{t("flowBuilder.deleteState")}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {t("flowBuilder.deleteConfirm")} <strong className="text-foreground">{deleteTarget.name}</strong>?
+                <h3 className="text-sm font-semibold text-text-primary">{t("flowBuilder.deleteState")}</h3>
+                <p className="text-xs text-text-secondary mt-1">
+                  {t("flowBuilder.deleteConfirm")} <strong className="text-text-primary">{deleteTarget.name}</strong>?
                 </p>
               </div>
             </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted transition-colors"
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                onClick={handleDelete}
-                className="px-4 py-2 text-sm font-medium text-destructive-foreground bg-destructive rounded-lg hover:bg-destructive/90 transition-colors"
-              >
-                {t("common.delete")}
-              </button>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="xs" onClick={() => setDeleteTarget(null)}>{t("common.cancel")}</Button>
+              <Button variant="danger" size="xs" onClick={handleDelete}>{t("common.delete")}</Button>
             </div>
           </div>
         </div>

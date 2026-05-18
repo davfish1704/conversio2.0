@@ -4,6 +4,7 @@ import { type ReactNode } from "react"
 import SidebarNavigation from "./SidebarNavigation"
 import TopBar from "./TopBar"
 import CommandPalette from "./CommandPalette"
+import KeyboardShortcutsModal, { useKeyboardShortcuts } from "./KeyboardShortcutsModal"
 import { SidebarProvider, useSidebar } from "@/lib/SidebarContext"
 import { CommandPaletteProvider } from "@/lib/CommandPaletteContext"
 import EmailVerificationBanner from "@/components/ui/EmailVerificationBanner"
@@ -21,6 +22,7 @@ function MainContent({
   emailVerified: boolean
 }) {
   const { collapsed } = useSidebar()
+  const { shortcutsOpen, setShortcutsOpen } = useKeyboardShortcuts()
 
   return (
     <>
@@ -32,7 +34,7 @@ function MainContent({
           collapsed ? "md:ml-14" : "md:ml-60"
         )}
       >
-        <TopBar user={user} />
+        <TopBar user={user} onShortcutsToggle={() => setShortcutsOpen(true)} />
 
         {!emailVerified && <EmailVerificationBanner />}
 
@@ -40,6 +42,8 @@ function MainContent({
           {children}
         </main>
       </div>
+
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </>
   )
 }

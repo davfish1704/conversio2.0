@@ -100,7 +100,7 @@ export default function AssetsPage() {
     <div className="min-h-screen bg-background">
       <BoardTabs board={board} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <div className="px-6 py-5 space-y-4">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -116,7 +116,7 @@ export default function AssetsPage() {
           </div>
           <Button
             onClick={() => setShowUpload((v) => !v)}
-            variant={showUpload ? "outline" : "default"}
+            variant={showUpload ? "outline" : "primary"}
             size="sm"
           >
             <Upload className="h-4 w-4 mr-1.5" />

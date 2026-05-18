@@ -222,7 +222,7 @@ export default function BrainLabPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="bg-card border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-6">
           <div className="py-4">
             <h1 className="text-xl font-semibold text-foreground">BrainLab</h1>
             <p className="text-xs text-muted-foreground mt-0.5">KI-Persönlichkeit & Wissensdatenbank</p>
@@ -231,7 +231,7 @@ export default function BrainLabPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="px-6 py-5">
         {/* Tab navigation */}
         <div className="flex gap-0 border-b border-border mb-6">
           {TABS.map((tab) => (

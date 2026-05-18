@@ -40,8 +40,73 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
   const [unassigned, setUnassigned] = useState<Lead[]>(initialUnassigned)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [activeLead, setActiveLead] = useState<Lead | null>(null)
+  const [focusedCol, setFocusedCol] = useState(0)
+  const [focusedRow, setFocusedRow] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  // Keyboard navigation (Linear-style: j/k → ↓/↑, →/← between cols, Enter opens)
+  const allCols = [
+    ...(unassigned.length > 0 ? [{ id: UNASSIGNED_COL_ID, name: "Eingehend", leads: unassigned }] : []),
+    ...states,
+  ]
+
+  const flatLeads = allCols.map((c) => c.leads)
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) return
+      if (allCols.length === 0) return
+
+      const colLeads = flatLeads[focusedCol] ?? []
+      const maxRow = Math.max(0, colLeads.length - 1)
+      const maxCol = allCols.length - 1
+
+      switch (e.key) {
+        case "ArrowDown":
+        case "j": {
+          e.preventDefault()
+          setFocusedRow((r) => Math.min(r + 1, maxRow))
+          break
+        }
+        case "ArrowUp":
+        case "k": {
+          e.preventDefault()
+          setFocusedRow((r) => Math.max(0, r - 1))
+          break
+        }
+        case "ArrowRight":
+        case "l": {
+          e.preventDefault()
+          const nextCol = Math.min(focusedCol + 1, maxCol)
+          if (nextCol !== focusedCol) {
+            setFocusedCol(nextCol)
+            setFocusedRow(0)
+          }
+          break
+        }
+        case "ArrowLeft":
+        case "h": {
+          e.preventDefault()
+          const prevCol = Math.max(0, focusedCol - 1)
+          if (prevCol !== focusedCol) {
+            setFocusedCol(prevCol)
+            setFocusedRow(0)
+          }
+          break
+        }
+        case "Enter": {
+          e.preventDefault()
+          const lead = colLeads[focusedRow]
+          if (lead) setSelectedLead(lead)
+          break
+        }
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [focusedCol, focusedRow, allCols.length, flatLeads])
 
   useEffect(() => {
     return () => { abortRef.current?.abort() }

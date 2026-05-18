@@ -3,16 +3,16 @@
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
-import Image from "next/image"
 import { signOut } from "next-auth/react"
 import {
   Menu,
   Bell,
   Search,
-  ChevronRight,
   Settings,
   LogOut,
   User,
+  Sun,
+  Moon,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -23,40 +23,58 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useSidebar } from "@/lib/SidebarContext"
 import { useCommandPalette } from "@/lib/CommandPaletteContext"
+import { useTheme } from "@/lib/ThemeContext"
 import { cn } from "@/lib/utils"
 
-const ROUTE_LABELS: Record<string, string> = {
-  "/dashboard":           "Dashboard",
-  "/crm":                 "CRM",
-  "/reports":             "Berichte",
-  "/team":                "Team",
-  "/settings":            "Einstellungen",
-  "/admin-bot":           "Admin Bot",
-  "/admin-usage":         "Token-Nutzung",
-  "/admin-notifications": "Benachrichtigungen",
-  "/builder":             "Builder",
-}
+function buildBreadcrumbs(pathname: string): { label: string; href?: string }[] {
+  const parts = pathname.split("/").filter(Boolean)
+  if (parts.length <= 1) return [{ label: "Dashboard" }]
 
-function resolvePageLabel(pathname: string): string {
-  if (ROUTE_LABELS[pathname]) return ROUTE_LABELS[pathname]
-  if (pathname.startsWith("/boards/")) {
-    if (pathname.endsWith("/settings")) return "Board-Einstellungen"
-    if (pathname.endsWith("/brain"))    return "KI-Konfiguration"
-    if (pathname.endsWith("/flow"))     return "Flow Builder"
-    if (pathname.endsWith("/assets"))   return "Assets"
-    if (pathname.endsWith("/usage"))    return "Token-Nutzung"
-    return "Pipeline"
+  const labels: Record<string, string> = {
+    dashboard: "Dashboard",
+    boards: "Boards",
+    crm: "CRM",
+    flow: "Flow Builder",
+    brain: "BrainLab",
+    assets: "Assets",
+    insights: "Insights",
+    settings: "Einstellungen",
+    usage: "Nutzung",
+    team: "Team",
+    reports: "Berichte",
+    "admin-bot": "Admin Bot",
+    "admin-notifications": "Benachrichtigungen",
+    "admin-usage": "Token-Nutzung",
   }
-  return ""
+
+  const crumbs: { label: string; href?: string }[] = []
+
+  // Build path progressively
+  let acc = ""
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    acc += "/" + part
+    const label = labels[part] || part.charAt(0).toUpperCase() + part.slice(1)
+    if (i < parts.length - 1) {
+      crumbs.push({ label, href: acc })
+    } else {
+      crumbs.push({ label })
+    }
+  }
+
+  return crumbs
 }
 
 export default function TopBar({
   user,
+  onShortcutsToggle,
 }: {
   user: { name?: string | null; email?: string | null; image?: string | null }
+  onShortcutsToggle?: () => void
 }) {
   const { toggleMobile } = useSidebar()
   const { setOpen: openPalette } = useCommandPalette()
+  const { theme, toggleTheme } = useTheme()
   const pathname = usePathname()
   const router = useRouter()
   const [unread, setUnread] = useState(0)
@@ -77,11 +95,10 @@ export default function TopBar({
     return () => { cancelled = true; clearInterval(iv) }
   }, [])
 
-  const pageLabel = resolvePageLabel(pathname)
-  const initial = (user.name || user.email || "?").charAt(0).toUpperCase()
+  const crumbs = buildBreadcrumbs(pathname)
 
   return (
-    <header className="sticky top-0 z-20 h-12 flex items-center gap-3 px-4 bg-background border-b border-border shrink-0">
+    <header className="sticky top-0 z-20 h-10 flex items-center gap-3 px-4 bg-background border-b border-border shrink-0">
       {/* Mobile hamburger */}
       <button
         onClick={toggleMobile}
@@ -91,14 +108,28 @@ export default function TopBar({
         <Menu className="w-4 h-4" />
       </button>
 
-      {/* Breadcrumb */}
-      {pageLabel && (
-        <nav className="flex items-center gap-1.5 text-sm min-w-0">
-          <span className="text-muted-foreground hidden sm:block">Conversio</span>
-          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 hidden sm:block shrink-0" />
-          <span className="font-medium text-foreground truncate">{pageLabel}</span>
-        </nav>
-      )}
+      {/* Breadcrumbs */}
+      <nav className="flex items-center gap-1 text-sm min-w-0">
+        {crumbs.map((crumb, i) => (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && (
+              <span className="text-text-tertiary mx-0.5 select-none text-xs">/</span>
+            )}
+            {crumb.href ? (
+              <Link
+                href={crumb.href}
+                className="text-text-tertiary hover:text-text-primary transition-colors truncate max-w-[120px]"
+              >
+                {crumb.label}
+              </Link>
+            ) : (
+              <span className="text-text-primary font-medium truncate max-w-[200px]">
+                {crumb.label}
+              </span>
+            )}
+          </span>
+        ))}
+      </nav>
 
       <div className="flex-1" />
 
@@ -113,24 +144,36 @@ export default function TopBar({
         aria-label="Suchen"
       >
         <Search className="w-3.5 h-3.5 shrink-0" />
-        <span>Suchen</span>
-        <kbd className="ml-2 px-1 py-0.5 rounded text-[10px] font-mono bg-background border border-border leading-none">
+        <span className="hidden md:inline">Suchen</span>
+        <kbd className="ml-1 px-1 py-0.5 rounded text-[10px] font-mono bg-background border border-border leading-none">
           ⌘K
         </kbd>
       </button>
+
+      {/* Shortcuts */}
+      {onShortcutsToggle && (
+        <button
+          onClick={onShortcutsToggle}
+          className="h-7 w-7 flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-muted transition-colors text-xs font-mono"
+          aria-label="Keyboard shortcuts"
+          title="Keyboard Shortcuts"
+        >
+          ?
+        </button>
+      )}
 
       {/* Notifications */}
       <Link
         href="/admin-notifications"
         className={cn(
-          "relative h-8 w-8 flex items-center justify-center rounded-md",
+          "relative h-7 w-7 flex items-center justify-center rounded-md",
           "text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         )}
         aria-label="Benachrichtigungen"
       >
         <Bell className="w-4 h-4" />
         {unread > 0 && (
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-destructive rounded-full" />
+          <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-destructive rounded-full" />
         )}
       </Link>
 
@@ -138,20 +181,18 @@ export default function TopBar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="h-8 w-8 rounded-full overflow-hidden ring-0 hover:ring-2 hover:ring-border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-7 w-7 rounded-full overflow-hidden ring-0 hover:ring-2 hover:ring-border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Benutzerprofil"
           >
             {user.image ? (
-              <Image
+              <img
                 src={user.image}
                 alt={user.name ?? ""}
-                width={32}
-                height={32}
                 className="object-cover w-full h-full"
               />
             ) : (
-              <div className="w-full h-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold">
-                {initial}
+              <div className="w-full h-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-semibold">
+                {(user.name || user.email || "?").charAt(0).toUpperCase()}
               </div>
             )}
           </button>
@@ -168,6 +209,10 @@ export default function TopBar({
               <Settings className="w-4 h-4" />
               Einstellungen
             </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={toggleTheme} className="flex items-center gap-2 cursor-pointer">
+            {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {theme === "dark" ? "Helles Design" : "Dunkles Design"}
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/team" className="flex items-center gap-2 cursor-pointer">

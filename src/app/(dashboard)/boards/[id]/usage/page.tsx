@@ -63,17 +63,13 @@ export default function BoardUsagePage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="bg-card border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-6">
           <div className="py-4 flex items-center justify-between">
             <div>
               <h1 className="text-xl font-semibold text-foreground">Token Usage</h1>
               <p className="text-xs text-muted-foreground mt-0.5">KI-Verbrauch und Kosten</p>
             </div>
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className={selectClass}
-            >
+            <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={selectClass}>
               <option value={7}>Letzte 7 Tage</option>
               <option value={30}>Letzte 30 Tage</option>
               <option value={90}>Letzte 90 Tage</option>
@@ -83,7 +79,7 @@ export default function BoardUsagePage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+      <div className="px-6 py-5 space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />

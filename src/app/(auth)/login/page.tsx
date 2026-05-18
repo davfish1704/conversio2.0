@@ -1,14 +1,14 @@
-'use client'
+"use client"
 
-import { Suspense, useState, useContext } from 'react'
-import { useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { signIn } from 'next-auth/react'
-import { LanguageContext } from '@/lib/LanguageContext'
-import { FEATURES } from '@/lib/features'
-import { Zap, ArrowRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Suspense, useState, useContext } from "react"
+import { useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { signIn } from "next-auth/react"
+import { LanguageContext } from "@/lib/LanguageContext"
+import { FEATURES } from "@/lib/features"
+import { Zap, ArrowRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 const GoogleIcon = () => (
   <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -22,76 +22,73 @@ const GoogleIcon = () => (
 function LoginForm() {
   const { t } = useContext(LanguageContext)
   const searchParams = useSearchParams()
-  const urlError = searchParams.get('error')
+  const urlError = searchParams.get("error")
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    await signIn('credentials', {
+    await signIn("credentials", {
       email,
       password,
-      callbackUrl: '/dashboard',
+      callbackUrl: "/dashboard",
     })
   }
 
-  const errorMessage = urlError === 'OAuthAccountNotLinked'
-    ? t('auth.googleAccountNotLinked')
-    : urlError === 'CredentialsSignin'
-    ? t('auth.invalidEmailPassword')
-    : urlError === 'AccessDenied'
-    ? t('auth.alreadyLinked')
+  const errorMessage = urlError === "OAuthAccountNotLinked"
+    ? t("auth.googleAccountNotLinked")
+    : urlError === "CredentialsSignin"
+    ? t("auth.invalidEmailPassword")
+    : urlError === "AccessDenied"
+    ? t("auth.alreadyLinked")
     : urlError
-    ? t('auth.genericError')
+    ? t("auth.genericError")
     : null
 
   return (
-    <div className="w-full max-w-sm">
-      {/* Logo */}
-      <div className="text-center mb-8">
-        <Link href="/" className="inline-flex items-center gap-2.5 mb-6 group">
-          <div className="w-9 h-9 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
-            <Zap className="w-4.5 h-4.5 text-white fill-white" />
+    <div className="w-full max-w-sm px-4">
+      <div className="text-center mb-6">
+        <Link href="/" className="inline-flex items-center gap-2.5 mb-5 group">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <Zap className="w-4 h-4 text-primary-foreground" strokeWidth={2.5} />
           </div>
-          <span className="text-lg font-semibold tracking-tight text-foreground">Conversio</span>
+          <span className="text-base font-semibold tracking-tight text-foreground">Conversio</span>
         </Link>
-        <h1 className="text-2xl font-bold text-foreground">Willkommen zurück</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{t('auth.signInToContinue')}</p>
+        <h1 className="text-lg font-semibold text-foreground">Willkommen zurück</h1>
+        <p className="mt-1 text-xs text-text-secondary">{t("auth.signInToContinue")}</p>
       </div>
 
-      <div className="bg-card rounded-2xl border border-border shadow-sm p-7 space-y-5">
+      <div className="rounded-lg border border-border bg-bg-elevated p-5 space-y-4">
         {errorMessage && (
-          <div className="bg-destructive/10 text-destructive p-3.5 rounded-lg text-sm border border-destructive/20">
+          <div className="bg-destructive/10 text-destructive px-3 py-2 rounded-md text-xs border border-destructive/20">
             {errorMessage}
           </div>
         )}
 
-        {/* Google */}
         <button
-          onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
-          className="w-full flex items-center justify-center gap-2.5 bg-background border border-border text-foreground px-4 py-2.5 rounded-xl hover:bg-muted transition-colors text-sm font-medium"
+          onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+          className="w-full flex items-center justify-center gap-2.5 h-9 rounded-lg border border-border bg-transparent text-foreground text-xs font-medium hover:bg-muted transition-colors"
         >
           <GoogleIcon />
-          {t('auth.continueWithGoogle')}
+          {t("auth.continueWithGoogle")}
         </button>
 
-        {/* Divider */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-border" />
           </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="px-3 bg-card text-muted-foreground">{t('auth.or')}</span>
+          <div className="relative flex justify-center text-[10px]">
+            <span className="px-2 bg-bg-elevated text-text-tertiary">{t("auth.or")}</span>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label htmlFor="email" className="block text-xs font-medium text-foreground mb-1.5">
-              {t('auth.email')}
+            <label htmlFor="email" className="block text-xs text-text-secondary mb-1">
+              {t("auth.email")}
             </label>
             <Input
               id="email"
@@ -99,14 +96,14 @@ function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={t('auth.emailPlaceholder')}
+              placeholder={t("auth.emailPlaceholder")}
               autoComplete="email"
+              className="h-9"
             />
           </div>
-
           <div>
-            <label htmlFor="password" className="block text-xs font-medium text-foreground mb-1.5">
-              {t('auth.password')}
+            <label htmlFor="password" className="block text-xs text-text-secondary mb-1">
+              {t("auth.password")}
             </label>
             <Input
               id="password"
@@ -115,44 +112,40 @@ function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
+              className="h-9"
             />
           </div>
-
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full"
-          >
-            {loading ? t('auth.signingIn') : t('auth.signIn')}
-            {!loading && <ArrowRight className="w-3.5 h-3.5 ml-1.5" />}
+          <Button type="submit" disabled={loading} className="w-full h-9 text-xs">
+            {loading ? t("auth.signingIn") : t("auth.signIn")}
+            {!loading && <ArrowRight className="w-3 h-3 ml-1" />}
           </Button>
         </form>
 
-        <p className="text-center text-xs text-muted-foreground">
-          {t('auth.forgotPassword')}{' '}
+        <p className="text-center text-[10px] text-text-tertiary">
+          {t("auth.forgotPassword")}{" "}
           <a
             href="mailto:info@attrsales.net?subject=Password%20Reset"
-            className="font-medium text-primary hover:text-primary/80 transition-colors"
+            className="font-medium text-text-link hover:underline"
           >
-            {t('auth.contactSupport')}
+            {t("auth.contactSupport")}
           </a>
         </p>
 
         {FEATURES.publicSignup && (
-          <p className="text-center text-xs text-muted-foreground">
-            {t('auth.noAccount')}{' '}
-            <Link href="/signup" className="font-medium text-primary hover:text-primary/80 transition-colors">
-              {t('auth.registerNow')}
+          <p className="text-center text-[10px] text-text-tertiary">
+            {t("auth.noAccount")}{" "}
+            <Link href="/signup" className="font-medium text-text-link hover:underline">
+              {t("auth.registerNow")}
             </Link>
           </p>
         )}
       </div>
 
-      <p className="text-center text-[10px] text-muted-foreground mt-8">
-        © 2026 Conversio ·{' '}
-        <Link href="/privacy" className="hover:text-foreground transition-colors">Datenschutz</Link>
-        {' · '}
-        <Link href="/imprint" className="hover:text-foreground transition-colors">Impressum</Link>
+      <p className="text-center text-[10px] text-text-tertiary mt-6">
+        © 2026 Conversio ·{" "}
+        <Link href="/privacy" className="hover:text-text-primary transition-colors">Datenschutz</Link>
+        {" · "}
+        <Link href="/imprint" className="hover:text-text-primary transition-colors">Impressum</Link>
       </p>
     </div>
   )
@@ -160,18 +153,16 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-      <Suspense fallback={
-        <div className="w-full max-w-sm">
-          <div className="bg-card rounded-2xl border border-border p-7 space-y-4">
-            <div className="h-9 bg-muted rounded-lg animate-pulse" />
-            <div className="h-9 bg-muted rounded-lg animate-pulse" />
-            <div className="h-9 bg-muted rounded-lg animate-pulse" />
-          </div>
+    <Suspense fallback={
+      <div className="w-full max-w-sm px-4">
+        <div className="rounded-lg border border-border bg-bg-elevated p-5 space-y-3 animate-pulse">
+          <div className="h-8 bg-muted rounded" />
+          <div className="h-8 bg-muted rounded" />
+          <div className="h-9 bg-muted rounded" />
         </div>
-      }>
-        <LoginForm />
-      </Suspense>
-    </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

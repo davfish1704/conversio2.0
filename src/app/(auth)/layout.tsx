@@ -1,8 +1,6 @@
-import Footer from "@/components/layout/Footer"
-
 export const metadata = {
   title: 'Conversio',
-  description: 'CRM für Versicherungsmakler',
+  description: 'KI-Vertrieb für Versicherungsmakler',
 }
 
 export default function AuthLayout({
@@ -11,10 +9,11 @@ export default function AuthLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="de">
-      <body className="flex flex-col min-h-screen">
-        <div className="flex-1">{children}</div>
-        <Footer />
+    <html lang="de" className="dark">
+      <body className="min-h-screen bg-bg-primary flex flex-col antialiased">
+        <div className="flex-1 flex items-center justify-center">
+          {children}
+        </div>
       </body>
     </html>
   )
