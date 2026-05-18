@@ -85,6 +85,49 @@ Die Tests decken ab:
 7. **workflows** - Automatisierungs-Workflows
 8. **api_tokens** - Verschlüsselte API-Token für Integrationen
 
+## 🤖 Supervisor Agent
+
+Der Supervisor Agent überwacht automatisch alle Sub-Agent Runs, erkennt Probleme und benachrichtigt Admins via Telegram.
+
+### Trigger Rules (Detection Engine)
+
+| Rule | Beschreibung | Schwelle | Vorgeschlagene Aktion |
+|------|-------------|----------|----------------------|
+| `loop_on_state` | ≥4 aufeinanderfolgende Runs im selben State ohne Handoff | 4 runs | `FORCE_HANDOFF` |
+| `repeated_tool_failure` | ≥3 aufeinanderfolgende Tool-Execution-Fehler | 3 runs | `RESET_STATE` |
+| `low_confidence_handoff` | Handoff mit Confidence < 0.5 | < 50% | `REQUEST_HUMAN_TAKEOVER` |
+| `cost_spike` | Lead-Kosten > 5x Board-Durchschnitt | 5x avg | `NOTIFY_ONLY` |
+| `stuck_lead` | Kein AgentRun > 12h bei aktivem Lead | 12h | `NOTIFY_ONLY` |
+
+### Cron Jobs
+
+| Cron | Schedule | Beschreibung |
+|------|----------|-------------|
+| `/api/cron/supervisor-scan` | Alle 5 Minuten | Detection Rules auf allen Boards ausführen |
+| `/api/cron/supervisor-audit` | Alle 4 Stunden | Periodisches Board-Audit (existierend) |
+
+### Telegram Callback Handler
+
+Admins können Supervisor-Aktionen direkt per Telegram Inline Keyboard genehmigen, ablehnen oder schlummern:
+
+- `POST /api/telegram/admin-callback` — Verarbeitet Callback-Queries
+- Callback-Format: `supervisor:{approve|reject|snooze}:{actionId}`
+- Nach Genehmigung: `supervisor_execute` Job wird enqueued
+- Nach Schlummern: 1h Cooldown, Scan ignoriert die Detection
+
+### Neue Environment Variables
+
+```
+ADMIN_ALLOWED_TELEGRAM_IDS="123456789,987654321"
+CRON_SECRET="openssl rand -hex 32"
+```
+
+### Synthetic Test
+
+```bash
+npx tsx scripts/test-supervisor-scan.ts
+```
+
 ## 🎯 Next Steps (Baustein 2: Auth)
 
 - Google OAuth mit Supabase Auth implementieren

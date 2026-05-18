@@ -46,8 +46,9 @@ export function renderApprovalRequest(action: SupervisorAction): string {
 export function approvalInlineKeyboard(actionId: string) {
   return {
     inline_keyboard: [[
-      { text: "✅ Genehmigen", callback_data: `approve:${actionId}` },
-      { text: "❌ Ablehnen",   callback_data: `reject:${actionId}` },
+      { text: "✅ Genehmigen", callback_data: `supervisor:approve:${actionId}` },
+      { text: "❌ Ablehnen",   callback_data: `supervisor:reject:${actionId}` },
+      { text: "⏸ Schlummern",   callback_data: `supervisor:snooze:${actionId}` },
     ]],
   }
 }
