@@ -8,6 +8,8 @@ const tabs = [
   { key: "brain", label: "BrainLab", path: "/brain" },
   { key: "flow", label: "Flow Builder", path: "/flow" },
   { key: "assets", label: "Assets", path: "/assets" },
+  { key: "insights", label: "Insights", path: "/insights" },
+  { key: "usage", label: "Usage", path: "/usage" },
   { key: "settings", label: "Settings", path: "/settings" },
 ]
 

@@ -7,6 +7,7 @@ import { getInitials, getAvatarColor, formatRelativeTime } from "@/lib/utils/for
 import { LanguageContext } from "@/lib/LanguageContext"
 import TelegramInviteUI from "@/components/leads/TelegramInviteUI"
 import ChannelInviteUI from "@/components/leads/ChannelInviteUI"
+import AgentRunTimeline from "@/components/boards/AgentRunTimeline"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -112,6 +113,7 @@ const ChannelIcon = ({ channel, size = "sm" }: { channel: string; size?: "sm" | 
 }
 
 export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }: LeadDrawerProps) {
+  const [activeTab, setActiveTab] = useState<"chat" | "ai-activity">("chat")
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [aiSuggestion, setAiSuggestion] = useState("")
@@ -469,11 +471,43 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
         {/* Main Content: Chat + Data Side by Side */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* Left: Chat or Telegram invite */}
+          {/* Left: Chat / AI Activity / Telegram invite */}
           <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+
+            {/* Tab bar */}
+            {!needsTelegramInvite && (
+              <div className="flex items-center border-b border-border px-4 shrink-0">
+                <button
+                  onClick={() => setActiveTab("chat")}
+                  className={cn(
+                    "px-3 py-2.5 text-xs font-medium border-b-2 transition-colors -mb-[1px]",
+                    activeTab === "chat"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab("ai-activity")}
+                  className={cn(
+                    "px-3 py-2.5 text-xs font-medium border-b-2 transition-colors -mb-[1px]",
+                    activeTab === "ai-activity"
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  AI Activity
+                </button>
+              </div>
+            )}
 
             {needsTelegramInvite ? (
               <TelegramInviteUI leadId={lead.id} />
+            ) : activeTab === "ai-activity" ? (
+              <div className="flex-1 overflow-y-auto p-4">
+                <AgentRunTimeline leadId={lead.id} />
+              </div>
             ) : (<>
 
             {/* Messages */}

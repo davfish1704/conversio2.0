@@ -29,6 +29,7 @@ export default function BoardTabs({ board }: { board: Board }) {
     { key: "flow",     label: t("boardTabs.flowBuilder"), href: `/boards/${id}/flow` },
     { key: "assets",   label: t("boardTabs.assets"), href: `/boards/${id}/assets` },
     { key: "usage",    label: t("boardTabs.tokenUsage"), href: `/boards/${id}/usage` },
+    { key: "insights", label: "Insights", href: `/boards/${id}/insights` },
     { key: "settings", label: t("boardTabs.settings"), href: `/boards/${id}/settings` },
     { key: "access",   label: t("boardTabs.access"), href: `/boards/${id}/settings/access` },
   ]
