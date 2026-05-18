@@ -7,6 +7,7 @@ import { sanitizeAIOutput } from "@/lib/ai/prompt/builder"
 import { resolveMemory, formatMemoryForPrompt } from "@/lib/memory/resolver"
 import { extractMemory } from "@/lib/memory/extractor"
 import { updateMemory, appendFact } from "@/lib/memory/updater"
+import { randomUUID } from "node:crypto"
 import { getToolDefinitions } from "@/lib/tools"
 import { executeToolCalls } from "@/lib/tools/executor"
 import { evaluateHandoffRules, decideHandoff, loadHandoffContext } from "./handoff-engine"
@@ -180,6 +181,7 @@ export async function executeSubAgentRun(
   let usedModel = ""
   let usedProvider = ""
   const allToolCallsMade: Array<{ name: string; args: unknown }> = []
+  const agentRunId = randomUUID()
   let outcome: AgentRunOutcome = "SUCCESS_CONTINUE"
   let errorMessage: string | undefined
 
@@ -198,6 +200,7 @@ export async function executeSubAgentRun(
     boardId,
     stateId: state.id,
     simulate: false,
+    agentRunId,
   }
 
   try {
@@ -251,7 +254,8 @@ export async function executeSubAgentRun(
       })
 
       for (const ex of executed) {
-        allToolCallsMade.push({ name: ex.toolName, args: {} })
+        const execArgs = response.toolCalls.find((tc) => tc.name === ex.toolName)?.arguments
+        allToolCallsMade.push({ name: ex.toolName, args: execArgs ?? {} })
 
         // Detect handoff_proposed signal
         if (ex.toolName === "handoff_proposed" && ex.result.success) {
@@ -332,7 +336,7 @@ export async function executeSubAgentRun(
           totalTokens:  forced.usage?.totalTokens  ?? 0,
           providerCost: forced.providerCost ?? 0,
         },
-      }).catch(() => {})
+      }).catch((e: unknown) => console.error("[AgentRuntime] UsageLog forced write failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
       if (forced.content?.trim()) {
         finalContent = forced.content
         usedStrategy = "forced"
@@ -406,6 +410,7 @@ export async function executeSubAgentRun(
 
   await prisma.agentRun.create({
     data: {
+      id:               agentRunId,
       conversationId,
       leadId:           lead.id,
       stateId:          state.id,
@@ -447,7 +452,7 @@ export async function executeSubAgentRun(
         status:      "SENT",
         aiGenerated: true,
       },
-    }).catch(() => {})
+    }).catch((e: unknown) => console.error("[AgentRuntime] Outbound message persistence failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
 
     await sendAIResponse(conversationId, cleanedText).catch((e: unknown) =>
       console.error("[AgentRuntime] Nachricht senden fehlgeschlagen:", e),
@@ -456,7 +461,7 @@ export async function executeSubAgentRun(
     await prisma.conversation.update({
       where: { id: conversationId },
       data:  { lastMessageAt: new Date() },
-    }).catch(() => {})
+    }).catch((e: unknown) => console.error("[AgentRuntime] Conversation lastMessageAt update failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
   }
 
   // ── Step 12: Update Memory ─────────────────────────────────────────────────

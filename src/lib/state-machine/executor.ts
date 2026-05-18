@@ -250,7 +250,7 @@ async function executeAIState(
       leadId: conversationId,
       boardId,
       scheduledFor: new Date(Date.now() + delayMs),
-    }).catch(() => {})
+    }).catch((e: unknown) => console.error("[executor] Escalation check enqueue failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
   }
 
   if (result.action === "transition" && result.targetStateId) {
@@ -274,7 +274,7 @@ async function maybeScheduleSummarization(
       where: { id: conversationId },
       data: { messageCountSinceSum: { increment: 1 } },
     })
-    .catch(() => {})
+    .catch((e: unknown) => console.error("[executor] Message count increment failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
 
   const newCount = messageCountSinceSum + 1
   const hoursSinceSummary = summaryUpdatedAt
@@ -288,12 +288,12 @@ async function maybeScheduleSummarization(
       leadId: conversationId,
       scheduledFor: new Date(),
       maxAttempts: 2,
-    }).catch(() => {})
+    }).catch((e: unknown) => console.error("[executor] Summarization job enqueue failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
     await prisma.conversation
       .update({
         where: { id: conversationId },
         data: { messageCountSinceSum: 0 },
       })
-      .catch(() => {})
+      .catch((e: unknown) => console.error("[executor] Message count reset failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
   }
 }

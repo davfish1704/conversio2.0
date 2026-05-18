@@ -25,9 +25,13 @@ export async function moveLeadToStage(
     return
   }
 
+  const targetState = await prisma.state.findUnique({
+    where: { id: newStateId },
+    select: { name: true, orderIndex: true },
+  })
+
   // Rückwärts-Schutz für AI-Advances
   if (reason === "ai_advance" && lead.currentState) {
-    const targetState = await prisma.state.findUnique({ where: { id: newStateId } })
     if (targetState && targetState.orderIndex <= lead.currentState.orderIndex) {
       console.warn(
         `[stage-guard] Blockiert: AI versucht Lead rückwärts zu schieben ` +
@@ -40,7 +44,9 @@ export async function moveLeadToStage(
 
   const historyEntry = {
     fromStateId: lead.currentStateId,
+    fromStateName: lead.currentState?.name ?? null,
     toStateId: newStateId,
+    toStateName: targetState?.name ?? null,
     reason,
     movedBy: userId ?? reason,
     timestamp: new Date().toISOString(),

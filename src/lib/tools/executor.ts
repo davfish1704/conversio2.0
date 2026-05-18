@@ -55,6 +55,7 @@ export async function executeToolCalls(params: {
     if (!context.simulate) {
       await (prisma as any).executionLog.create({
         data: {
+          agentRunId: context.agentRunId ?? undefined,
           boardId: board.id,
           conversationId: conversation.id,
           stateId: context.stateId ?? null,

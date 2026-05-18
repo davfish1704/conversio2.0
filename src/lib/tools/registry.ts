@@ -6,6 +6,7 @@ export interface ToolExecutionContext {
   boardId: string
   stateId: string
   simulate: boolean
+  agentRunId?: string
 }
 
 export interface ToolResult {
