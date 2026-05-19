@@ -83,7 +83,7 @@ export default function LeadCard({
           </div>
 
           {states && states.length > 0 && onStateChange && (
-            <div className="relative opacity-0 group-hover:opacity-100 transition-opacity duration-100">
+            <div className="relative opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-100">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown) }}
                 className="flex items-center gap-1 px-1.5 py-[2px] text-[10px] text-text-tertiary hover:text-text-primary hover:bg-muted rounded transition-colors"
