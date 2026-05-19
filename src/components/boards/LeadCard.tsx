@@ -83,13 +83,14 @@ export default function LeadCard({
           </div>
 
           {states && states.length > 0 && onStateChange && (
-            <div className="relative">
+            <div className="relative opacity-0 group-hover:opacity-100 transition-opacity duration-100">
               <button
                 onClick={(e) => { e.stopPropagation(); setShowDropdown(!showDropdown) }}
                 className="flex items-center gap-1 px-1.5 py-[2px] text-[10px] text-text-tertiary hover:text-text-primary hover:bg-muted rounded transition-colors"
+                title="State wechseln"
               >
                 <span className="truncate max-w-[70px]">
-                  {states.find((s) => s.id === lead.currentStateId)?.name ?? "Phase"}
+                  {states.find((s) => s.id === lead.currentStateId)?.name ?? "State"}
                 </span>
                 <ChevronDown className="w-2.5 h-2.5 shrink-0" />
               </button>

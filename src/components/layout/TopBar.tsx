@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { signOut } from "next-auth/react"
@@ -24,13 +24,17 @@ import {
 import { useSidebar } from "@/lib/SidebarContext"
 import { useCommandPalette } from "@/lib/CommandPaletteContext"
 import { useTheme } from "@/lib/ThemeContext"
+import { getAllBreadcrumbs, subscribe } from "@/lib/breadcrumb-store"
 import { cn } from "@/lib/utils"
 
-function buildBreadcrumbs(pathname: string): { label: string; href?: string }[] {
+function buildBreadcrumbs(
+  pathname: string,
+  dynamicLabels: Record<string, string> = {},
+): { label: string; href?: string }[] {
   const parts = pathname.split("/").filter(Boolean)
   if (parts.length <= 1) return [{ label: "Dashboard" }]
 
-  const labels: Record<string, string> = {
+  const staticLabels: Record<string, string> = {
     dashboard: "Dashboard",
     boards: "Boards",
     crm: "CRM",
@@ -49,12 +53,16 @@ function buildBreadcrumbs(pathname: string): { label: string; href?: string }[] 
 
   const crumbs: { label: string; href?: string }[] = []
 
-  // Build path progressively
   let acc = ""
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]
     acc += "/" + part
-    const label = labels[part] || part.charAt(0).toUpperCase() + part.slice(1)
+    // Try dynamic labels first (board names etc.), then static, then fallback
+    const label = dynamicLabels[part] ?? staticLabels[part] ?? null
+    if (!label) {
+      // Skip unknown dynamic segments (like board IDs — should come from dynamicLabels)
+      continue
+    }
     if (i < parts.length - 1) {
       crumbs.push({ label, href: acc })
     } else {
@@ -95,7 +103,8 @@ export default function TopBar({
     return () => { cancelled = true; clearInterval(iv) }
   }, [])
 
-  const crumbs = buildBreadcrumbs(pathname)
+  const dynamicLabels = useSyncExternalStore(subscribe, getAllBreadcrumbs, getAllBreadcrumbs)
+  const crumbs = buildBreadcrumbs(pathname, dynamicLabels)
 
   return (
     <header className="sticky top-0 z-20 h-10 flex items-center gap-3 px-4 bg-background border-b border-border shrink-0">

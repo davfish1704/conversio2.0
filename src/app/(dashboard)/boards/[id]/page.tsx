@@ -10,6 +10,7 @@ import BoardTabs from "@/components/boards/BoardTabs"
 import { type Lead } from "@/components/boards/LeadCard"
 import { useContext } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
+import { setBreadcrumb } from "@/lib/breadcrumb-store"
 
 interface PipelineState {
   id: string
@@ -98,6 +99,8 @@ export default function BoardPipelinePage() {
     </div>
   )
 
+  useEffect(() => { if (board?.name) setBreadcrumb(id, board.name) }, [id, board?.name])
+
   const totalLeads = pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length
 
   return (
@@ -119,13 +122,21 @@ export default function BoardPipelinePage() {
           >
             {t("common.import")}
           </button>
-          <button
-            disabled
-            title="Leads manuell hinzufügen — demnächst verfügbar"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-foreground bg-primary rounded-md opacity-40 cursor-not-allowed"
+          <span
+            className="relative group"
           >
-            + {t("common.addLead")}
-          </button>
+            <button
+              disabled
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground bg-muted/50 border border-border rounded-md cursor-default"
+            >
+              + {t("common.addLead")}
+            </button>
+            <div className="absolute right-0 top-full mt-1.5 z-50 hidden group-hover:block">
+              <div className="bg-popover border border-border rounded-lg shadow-md px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                Manuelles Hinzufügen — demnächst verfügbar
+              </div>
+            </div>
+          </span>
         </div>
       </div>
 

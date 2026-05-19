@@ -1,7 +1,9 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
+import { setBreadcrumb } from "@/lib/breadcrumb-store"
 
 const tabs = [
   { key: "pipeline", label: "Pipeline", path: "" },
@@ -16,6 +18,19 @@ const tabs = [
 export default function BoardNav() {
   const { id } = useParams() as { id: string }
   const pathname = usePathname()
+  const [boardName, setBoardName] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/boards/${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const name = data.board?.name ?? data.name
+        if (name) setBoardName(name)
+      })
+      .catch(() => {})
+  }, [id])
+
+  useEffect(() => { if (boardName) setBreadcrumb(id, boardName) }, [id, boardName])
 
   return (
     <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">

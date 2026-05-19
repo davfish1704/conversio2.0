@@ -19,6 +19,23 @@ interface KanbanColumnProps {
   onLeadClick: (lead: Lead) => void
 }
 
+const STAGE_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-amber-500",
+  "bg-violet-500",
+  "bg-rose-500",
+  "bg-cyan-500",
+  "bg-orange-500",
+  "bg-pink-500",
+]
+
+function getStageColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i)
+  return STAGE_COLORS[Math.abs(hash) % STAGE_COLORS.length]
+}
+
 export default function KanbanColumn({
   id, name, leads, states, onStateChange, onLeadClick,
 }: KanbanColumnProps) {
@@ -35,8 +52,11 @@ export default function KanbanColumn({
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 mb-2 px-1 shrink-0">
-        <h3 className="text-[11px] font-semibold text-text-primary uppercase tracking-wider">{name}</h3>
-        <span className="text-[10px] tabular-nums text-text-tertiary bg-muted px-1.5 py-[1px] rounded-full font-medium">{leads.length}</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={cn("w-2 h-2 rounded-full shrink-0", getStageColor(name))} />
+          <h3 className="text-[11px] font-semibold text-text-primary uppercase tracking-wider truncate">{name}</h3>
+        </div>
+        <span className="text-[10px] tabular-nums text-text-tertiary bg-muted px-1.5 py-[1px] rounded-full font-medium shrink-0">{leads.length}</span>
       </div>
 
       {/* Cards */}
@@ -54,9 +74,8 @@ export default function KanbanColumn({
         </SortableContext>
 
         {leads.length === 0 && (
-          <div className="dot-grid rounded-lg border border-dashed border-border p-4 text-center">
-            <p className="text-xs text-text-tertiary">{t("kanban.noLeadsYet")}</p>
-            <p className="text-[10px] text-text-tertiary/60 mt-0.5">{t("kanban.dragHere")}</p>
+          <div className="min-h-[120px] h-20 rounded-lg border border-dashed border-border flex items-center justify-center transition-colors">
+            <p className="text-[11px] text-text-tertiary/50">{t("kanban.dragHere")}</p>
           </div>
         )}
       </div>
