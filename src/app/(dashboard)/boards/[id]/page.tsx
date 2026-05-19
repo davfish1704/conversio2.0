@@ -82,6 +82,8 @@ export default function BoardPipelinePage() {
     fetchAll()
   }, [fetchAll])
 
+  useEffect(() => { if (board?.name) setBreadcrumb(id, board.name) }, [id, board?.name])
+
   if (loading || (!board && !notFound && !fetchError)) return <BoardSkeleton />
   if (fetchError) return (
     <div>
@@ -98,8 +100,6 @@ export default function BoardPipelinePage() {
       <p className="text-sm text-muted-foreground">{t("board.notFound")}</p>
     </div>
   )
-
-  useEffect(() => { if (board?.name) setBreadcrumb(id, board.name) }, [id, board?.name])
 
   const totalLeads = pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length
 
