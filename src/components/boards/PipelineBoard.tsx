@@ -247,7 +247,7 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
             {unassigned.length > 0 && (
               <KanbanColumn
                 id={UNASSIGNED_COL_ID}
-                name="Eingehend"
+                name={t("kanban.incoming")}
                 leads={unassigned}
                 states={stateOptions}
                 onStateChange={handleStateChange}
