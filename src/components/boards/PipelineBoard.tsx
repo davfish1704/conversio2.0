@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useContext } from "react"
 import { useRouter } from "next/navigation"
+import { LanguageContext } from "@/lib/LanguageContext"
 import {
   DndContext,
   DragOverlay,
@@ -45,10 +46,11 @@ export default function PipelineBoard({ states: initialStates, unassignedLeads: 
   const abortRef = useRef<AbortController | null>(null)
   const boardRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const { t } = useContext(LanguageContext)
 
   // Keyboard navigation (Linear-style: j/k → ↓/↑, →/← between cols, Enter opens)
   const allCols = [
-    ...(unassigned.length > 0 ? [{ id: UNASSIGNED_COL_ID, name: "Eingehend", leads: unassigned }] : []),
+    ...(unassigned.length > 0 ? [{ id: UNASSIGNED_COL_ID, name: t("kanban.incoming"), leads: unassigned }] : []),
     ...states,
   ]
 

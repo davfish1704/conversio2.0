@@ -419,6 +419,7 @@ export const translations = {
       tagsPlaceholder: "welcome, product-a, urgent",
     },
     kanban: {
+      incoming: "Incoming",
       noLeadsYet: "No leads yet",
       dragHere: "Drag leads here",
     },
@@ -959,6 +960,7 @@ export const translations = {
       tagsPlaceholder: "welcome, product-a, urgent",
     },
     kanban: {
+      incoming: "Eingehend",
       noLeadsYet: "Noch keine Leads",
       dragHere: "Ziehe Leads hierher",
     },
