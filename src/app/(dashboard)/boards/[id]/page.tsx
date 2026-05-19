@@ -10,7 +10,6 @@ import BoardTabs from "@/components/boards/BoardTabs"
 import { type Lead } from "@/components/boards/LeadCard"
 import { useContext } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
-import { setBreadcrumb } from "@/lib/breadcrumb-store"
 
 interface PipelineState {
   id: string
@@ -98,8 +97,6 @@ export default function BoardPipelinePage() {
       <p className="text-sm text-muted-foreground">{t("board.notFound")}</p>
     </div>
   )
-
-  useEffect(() => { if (board?.name) setBreadcrumb(id, board.name) }, [id, board?.name])
 
   const totalLeads = pipelineStates.reduce((sum, s) => sum + s.leads.length, 0) + unassignedLeads.length
 

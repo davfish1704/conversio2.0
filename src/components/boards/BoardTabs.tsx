@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation"
 import { useContext, useEffect } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
 import { Badge } from "@/components/ui/badge"
-import { setBreadcrumb } from "@/lib/breadcrumb-store"
 import { cn } from "@/lib/utils"
 
 interface Board {
@@ -19,8 +18,6 @@ export default function BoardTabs({ board }: { board: Board }) {
   const { t } = useContext(LanguageContext)
   const pathname = usePathname()
   const { id } = board
-
-  useEffect(() => { setBreadcrumb(id, board.name) }, [id, board.name])
 
   useEffect(() => {
     localStorage.setItem("crm_last_board_id", id)
