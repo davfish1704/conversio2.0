@@ -10,7 +10,6 @@ import BoardTabs from "@/components/boards/BoardTabs"
 import { type Lead } from "@/components/boards/LeadCard"
 import { useContext } from "react"
 import { LanguageContext } from "@/lib/LanguageContext"
-import { setBreadcrumb } from "@/lib/breadcrumb-store"
 
 interface PipelineState {
   id: string
@@ -81,8 +80,6 @@ export default function BoardPipelinePage() {
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
-
-  useEffect(() => { if (board?.name) setBreadcrumb(id, board.name) }, [id, board?.name])
 
   if (loading || (!board && !notFound && !fetchError)) return <BoardSkeleton />
   if (fetchError) return (
