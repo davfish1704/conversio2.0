@@ -18,6 +18,7 @@ import {
   type SubAgentBrain,
   type SubAgentKnowledge,
 } from "./sub-agent-prompt-builder"
+import type { QualificationField } from "@/lib/types"
 
 // Always available in every AI state
 const ALWAYS_ON_TOOLS = ["handoff_proposed", "escalate_to_supervisor"]
@@ -126,6 +127,9 @@ export async function executeSubAgentRun(
   const leadChannels = lead.conversations.map((c) => c.channel)
   const customData = (lead.customData as Record<string, unknown>) ?? {}
 
+  const qualificationFields =
+    (board.boardCustomFields as unknown as QualificationField[] | undefined) ?? []
+
   const promptInput: PromptBuilderInput = {
     agentRole:         stateData.agentRole,
     agentSystemPrompt: stateData.agentSystemPrompt,
@@ -141,6 +145,8 @@ export async function executeSubAgentRun(
     leadChannels,
     customData,
     language:          brain.language ?? "de",
+    qualificationFields: qualificationFields.length > 0 ? qualificationFields : undefined,
+    currentStateId:    state.id,
   }
 
   const systemPrompt = buildSubAgentSystemPrompt(promptInput)

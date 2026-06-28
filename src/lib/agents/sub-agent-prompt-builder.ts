@@ -1,4 +1,5 @@
 import { buildLanguageEnforcement } from "@/lib/ai/prompt/sections/language"
+import type { QualificationField } from "@/lib/types"
 
 export interface SubAgentBrain {
   systemPrompt: string
@@ -41,6 +42,11 @@ export interface PromptBuilderInput {
   leadChannels: string[]
   customData: Record<string, unknown>
   language?: string
+
+  // Structured qualification slots (from board.boardCustomFields)
+  qualificationFields?: QualificationField[]
+  /** Current state ID — used to filter fields by stateKeys. */
+  currentStateId?: string
 }
 
 export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
@@ -114,7 +120,66 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
     parts.push(`## Lead-Daten\n${lines.join("\n")}`)
   }
 
-  if (input.dataToCollect.length > 0) {
+  // ── Section 6b: Structured Qualification Slots ────────────────────────────
+  // Shown when the board has QualificationField definitions. Takes precedence
+  // over the legacy dataToCollect string-array section below.
+  if (input.qualificationFields && input.qualificationFields.length > 0) {
+    const fields = input.qualificationFields.filter(
+      (f) =>
+        // Show fields assigned to this state, or board-wide fields (stateKeys=[])
+        f.stateKeys.length === 0 ||
+        (input.currentStateId && f.stateKeys.includes(input.currentStateId)),
+    )
+
+    if (fields.length > 0) {
+      const filled: string[] = []
+      const emptyRequired: string[] = []
+      const emptyOptional: string[] = []
+
+      for (const f of fields) {
+        const val = input.customData[f.key]
+        const isFilled = val !== undefined && val !== null && val !== ""
+        const typeHint =
+          f.type === "enum" && f.options?.length
+            ? `(${f.options.join(" | ")})`
+            : f.unit
+              ? `(${f.type}, ${f.unit})`
+              : `(${f.type})`
+
+        if (isFilled) {
+          filled.push(`- ${f.label}: **${val}** ✓`)
+        } else if (f.required) {
+          emptyRequired.push(`- ${f.label} ${typeHint}`)
+        } else {
+          emptyOptional.push(`- ${f.label} ${typeHint}`)
+        }
+      }
+
+      const sectionLines: string[] = []
+
+      if (filled.length > 0) {
+        sectionLines.push(`Bereits erfasst:\n${filled.join("\n")}`)
+      }
+      if (emptyRequired.length > 0) {
+        sectionLines.push(`Noch zu erfassen (Pflicht):\n${emptyRequired.join("\n")}`)
+      }
+      if (emptyOptional.length > 0) {
+        sectionLines.push(`Optional:\n${emptyOptional.join("\n")}`)
+      }
+
+      if (emptyRequired.length === 0 && emptyOptional.length === 0) {
+        sectionLines.push("Alle Qualification-Felder sind erfasst.")
+      }
+
+      sectionLines.push(
+        "Nutze das Tool `update_qualification` sobald der Lead einen Wert nennt. " +
+          "Frag NICHT erneut nach bereits erfassten Werten.",
+      )
+
+      parts.push(`## Qualification-Slots\n${sectionLines.join("\n\n")}`)
+    }
+  } else if (input.dataToCollect.length > 0) {
+    // Legacy fallback: plain string-array from State.dataToCollect
     const collected = new Set(input.memories.map((m) => m.key))
     const needed = input.dataToCollect.filter((k) => !collected.has(k))
     if (needed.length > 0) {

@@ -10,7 +10,9 @@ export interface GeneratedState {
   rules: string
   orderIndex: number
   config: Record<string, unknown>
+  agentRole?: string
   agentGoal?: string
+  agentSystemPrompt?: string
 }
 
 interface PromptGeneratorProps {
@@ -176,7 +178,12 @@ export default function PromptGenerator({ boardId: _boardId, existingStatesCount
                       {typeLabels[state.type] || state.type}
                     </span>
                   </div>
-                  {state.config && state.type === "MESSAGE" && state.config.text != null && (
+                  {state.type === "AI" && state.agentGoal && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                      {state.agentGoal}
+                    </p>
+                  )}
+                  {state.type === "MESSAGE" && state.config.text != null && (
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-1 italic">
                       &quot;{String(state.config.text)}&quot;
                     </p>

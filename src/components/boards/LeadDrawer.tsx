@@ -58,6 +58,7 @@ interface FieldDefinition {
   type: string
   required?: boolean
   options?: string[]
+  unit?: string
 }
 
 interface LeadDrawerProps {
@@ -843,145 +844,187 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
                 />
               </div>
 
-              {/* Dynamic Custom Fields */}
-              {fieldDefinitions.length > 0 && (
-                <>
-                  <div className="border-t border-border" />
-                  <div>
-                    <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                      {t('leadDrawer.additionalFields')}
-                    </h4>
-                    <div className="space-y-3">
-                      {fieldDefinitions.map((field) => {
-                        const fieldKey = field.key || field.id || field.name || ""
-                        const fieldLabel = field.label || field.name || fieldKey
-                        const currentVal = customFields[fieldKey]
+              {/* Qualification Fields */}
+              {fieldDefinitions.length > 0 && (() => {
+                const sortedFields = [...fieldDefinitions].sort((a, b) => {
+                  const keyA = a.key || a.id || a.name || ""
+                  const keyB = b.key || b.id || b.name || ""
+                  const filledA = customFields[keyA] !== undefined && customFields[keyA] !== null && customFields[keyA] !== ""
+                  const filledB = customFields[keyB] !== undefined && customFields[keyB] !== null && customFields[keyB] !== ""
+                  const rankA = filledA ? 2 : a.required ? 0 : 1
+                  const rankB = filledB ? 2 : b.required ? 0 : 1
+                  return rankA - rankB
+                })
+                const requiredFields = fieldDefinitions.filter(f => f.required)
+                const filledRequired = requiredFields.filter(f => {
+                  const v = customFields[f.key || f.id || f.name || ""]
+                  return v !== undefined && v !== null && v !== ""
+                })
+                return (
+                  <>
+                    <div className="border-t border-border" />
+                    <div>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Qualifizierung
+                        </h4>
+                        {requiredFields.length > 0 && (
+                          <span className={cn(
+                            "text-[10px] tabular-nums font-medium",
+                            filledRequired.length === requiredFields.length
+                              ? "text-emerald-500"
+                              : "text-muted-foreground"
+                          )}>
+                            {filledRequired.length}/{requiredFields.length} Pflicht
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        {sortedFields.map((field) => {
+                          const fieldKey = field.key || field.id || field.name || ""
+                          const fieldLabel = field.label || field.name || fieldKey
+                          const currentVal = customFields[fieldKey]
+                          const isFilled = currentVal !== undefined && currentVal !== null && currentVal !== ""
+                          const isRequired = !!field.required
+                          const inputCls = cn(
+                            fieldInputClass,
+                            isRequired && !isFilled && "border-destructive/40 focus:ring-destructive/20"
+                          )
 
-                        return (
-                          <div key={fieldKey}>
-                            <label className="block text-[10px] text-muted-foreground mb-1">
-                              {fieldLabel}
-                              {field.required && <span className="text-destructive ml-0.5">*</span>}
-                            </label>
+                          return (
+                            <div key={fieldKey} className={cn(!isFilled && !isRequired && "opacity-60")}>
+                              <div className="flex items-center gap-1 mb-1">
+                                <span className={cn(
+                                  "text-[10px]",
+                                  isFilled ? "text-muted-foreground" : isRequired ? "text-foreground font-medium" : "text-muted-foreground"
+                                )}>
+                                  {fieldLabel}
+                                </span>
+                                {isRequired && !isFilled && <span className="text-destructive text-[10px]">*</span>}
+                                {isFilled && <span className="text-emerald-500 text-[10px]">✓</span>}
+                                {!isRequired && !isFilled && <span className="text-muted-foreground/50 text-[10px]">(optional)</span>}
+                                {field.unit && <span className="text-muted-foreground/50 text-[10px] ml-auto">{field.unit}</span>}
+                              </div>
 
-                            {(field.type === "text" || field.type === "phone" || field.type === "email") && (
-                              <input
-                                type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"}
-                                defaultValue={String(currentVal ?? "")}
-                                className={fieldInputClass}
-                                onBlur={(e) => {
-                                  const val = e.target.value
-                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                  saveCustomField(fieldKey, val)
-                                }}
-                              />
-                            )}
-
-                            {field.type === "number" && (
-                              <input
-                                type="number"
-                                defaultValue={String(currentVal ?? "")}
-                                className={fieldInputClass}
-                                onBlur={(e) => {
-                                  const val = e.target.value ? Number(e.target.value) : null
-                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                  saveCustomField(fieldKey, val)
-                                }}
-                              />
-                            )}
-
-                            {field.type === "date" && (
-                              <input
-                                type="date"
-                                defaultValue={String(currentVal ?? "")}
-                                className={fieldInputClass}
-                                onBlur={(e) => {
-                                  const val = e.target.value
-                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                  saveCustomField(fieldKey, val)
-                                }}
-                              />
-                            )}
-
-                            {field.type === "boolean" && (
-                              <div className="flex items-center gap-2">
+                              {(field.type === "text" || field.type === "phone" || field.type === "email") && (
                                 <input
-                                  type="checkbox"
-                                  id={`field-${fieldKey}`}
-                                  defaultChecked={!!currentVal}
-                                  className="w-4 h-4 rounded border-input text-primary focus:ring-ring"
-                                  onChange={(e) => {
-                                    const val = e.target.checked
+                                  type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"}
+                                  defaultValue={String(currentVal ?? "")}
+                                  className={inputCls}
+                                  onBlur={(e) => {
+                                    const val = e.target.value
                                     setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
                                     saveCustomField(fieldKey, val)
                                   }}
                                 />
-                                <label htmlFor={`field-${fieldKey}`} className="text-xs text-foreground">
-                                  {fieldLabel}
-                                </label>
-                              </div>
-                            )}
+                              )}
 
-                            {field.type === "select" && field.options && (
-                              <select
-                                defaultValue={String(currentVal ?? "")}
-                                className={fieldInputClass}
-                                onChange={(e) => {
-                                  const val = e.target.value
-                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                  saveCustomField(fieldKey, val)
-                                }}
-                              >
-                                <option value="">— Auswählen —</option>
-                                {field.options.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            )}
+                              {field.type === "number" && (
+                                <input
+                                  type="number"
+                                  defaultValue={String(currentVal ?? "")}
+                                  className={inputCls}
+                                  onBlur={(e) => {
+                                    const val = e.target.value ? Number(e.target.value) : null
+                                    setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                    saveCustomField(fieldKey, val)
+                                  }}
+                                />
+                              )}
 
-                            {field.type === "multiselect" && field.options && (
-                              <div className="space-y-1">
-                                {field.options.map(opt => {
-                                  const selected = Array.isArray(currentVal) && (currentVal as string[]).includes(opt)
-                                  return (
-                                    <label key={opt} className="flex items-center gap-2 text-xs text-foreground">
-                                      <input
-                                        type="checkbox"
-                                        checked={selected}
-                                        className="w-3.5 h-3.5 rounded border-input text-primary"
-                                        onChange={(e) => {
-                                          const prev = Array.isArray(currentVal) ? (currentVal as string[]) : []
-                                          const next = e.target.checked ? [...prev, opt] : prev.filter(v => v !== opt)
-                                          setCustomFields(p => ({ ...p, [fieldKey]: next }))
-                                          saveCustomField(fieldKey, next)
-                                        }}
-                                      />
-                                      {opt}
-                                    </label>
-                                  )
-                                })}
-                              </div>
-                            )}
+                              {field.type === "date" && (
+                                <input
+                                  type="date"
+                                  defaultValue={String(currentVal ?? "")}
+                                  className={inputCls}
+                                  onBlur={(e) => {
+                                    const val = e.target.value
+                                    setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                    saveCustomField(fieldKey, val)
+                                  }}
+                                />
+                              )}
 
-                            {(!field.type || !["text","number","date","boolean","select","multiselect","phone","email"].includes(field.type)) && (
-                              <input
-                                type="text"
-                                defaultValue={String(currentVal ?? "")}
-                                className={fieldInputClass}
-                                onBlur={(e) => {
-                                  const val = e.target.value
-                                  setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
-                                  saveCustomField(fieldKey, val)
-                                }}
-                              />
-                            )}
-                          </div>
-                        )
-                      })}
+                              {field.type === "boolean" && (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    id={`field-${fieldKey}`}
+                                    defaultChecked={!!currentVal}
+                                    className="w-4 h-4 rounded border-input text-primary focus:ring-ring"
+                                    onChange={(e) => {
+                                      const val = e.target.checked
+                                      setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                      saveCustomField(fieldKey, val)
+                                    }}
+                                  />
+                                  <label htmlFor={`field-${fieldKey}`} className="text-xs text-foreground">
+                                    {fieldLabel}
+                                  </label>
+                                </div>
+                              )}
+
+                              {(field.type === "select" || field.type === "enum") && field.options && (
+                                <select
+                                  defaultValue={String(currentVal ?? "")}
+                                  className={inputCls}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                    saveCustomField(fieldKey, val)
+                                  }}
+                                >
+                                  <option value="">— Auswählen —</option>
+                                  {field.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              )}
+
+                              {field.type === "multiselect" && field.options && (
+                                <div className="space-y-1">
+                                  {field.options.map(opt => {
+                                    const selected = Array.isArray(currentVal) && (currentVal as string[]).includes(opt)
+                                    return (
+                                      <label key={opt} className="flex items-center gap-2 text-xs text-foreground">
+                                        <input
+                                          type="checkbox"
+                                          checked={selected}
+                                          className="w-3.5 h-3.5 rounded border-input text-primary"
+                                          onChange={(e) => {
+                                            const prev = Array.isArray(currentVal) ? (currentVal as string[]) : []
+                                            const next = e.target.checked ? [...prev, opt] : prev.filter(v => v !== opt)
+                                            setCustomFields(p => ({ ...p, [fieldKey]: next }))
+                                            saveCustomField(fieldKey, next)
+                                          }}
+                                        />
+                                        {opt}
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              {(!field.type || !["text","number","date","boolean","select","enum","multiselect","phone","email"].includes(field.type)) && (
+                                <input
+                                  type="text"
+                                  defaultValue={String(currentVal ?? "")}
+                                  className={fieldInputClass}
+                                  onBlur={(e) => {
+                                    const val = e.target.value
+                                    setCustomFields(prev => ({ ...prev, [fieldKey]: val }))
+                                    saveCustomField(fieldKey, val)
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )
+              })()}
 
               {/* State History Toggle */}
               <div className="border-t border-border" />

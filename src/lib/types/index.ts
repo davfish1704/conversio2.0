@@ -1,3 +1,43 @@
+// ── Qualification Fields ─────────────────────────────────────────────────────
+// Stored as boardCustomFields: QualificationField[] on the Board model (Json).
+// Lead values live in lead.customData: Record<key, value>.
+// No separate Prisma model needed — the Json column is per-board and the value
+// store already exists. Add a real table only if per-field audit history is
+// required later.
+
+export type QualificationFieldType =
+  | "text"
+  | "number"
+  | "enum"
+  | "boolean"
+  | "date"
+  | "phone"
+  | "email"
+
+export interface QualificationField {
+  /** Stable nanoid — used as a stable reference, never changes after creation. */
+  id: string
+  /** camelCase slug — used as the key in lead.customData. */
+  key: string
+  /** German display label shown in sidebar and injected into agent prompts. */
+  label: string
+  type: QualificationFieldType
+  /** Only relevant for type === "enum". */
+  options?: string[]
+  required: boolean
+  order: number
+  /** Display unit injected into agent prompt, e.g. "EUR", "Monate", "m²". */
+  unit?: string
+  /**
+   * IDs of the State records responsible for filling this field.
+   * Empty array means any state can fill it.
+   * Populated by the flow generator; editable in the field editor.
+   */
+  stateKeys: string[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface User {
   id: string
   email: string
