@@ -83,7 +83,14 @@ function validateQualificationFields(raw: unknown): QualificationField[] {
     }))
 }
 
-const SYSTEM_PROMPT = `You are a flow builder assistant for a conversational AI CRM system (chatbot pipeline for insurance brokers and sales teams).
+function buildSystemPrompt(language: string): string {
+  const isGerman = language === "de"
+  const exampleName = isGerman ? "Kurzer deutscher State-Name" : "Short English state name"
+  const exampleLabel = isGerman ? "Deutsches Label" : "English label"
+
+  return `You are a flow builder assistant for a conversational AI CRM system (chatbot pipeline for insurance brokers and sales teams).
+
+CRITICAL: Respond in ${isGerman ? "GERMAN" : "ENGLISH"}. All state names, agent roles, agent goals, system prompts, qualification field labels, and options MUST be in ${isGerman ? "German" : "English"}.
 
 Generate a JSON object with two keys:
 - "states": array of conversation states
@@ -97,7 +104,7 @@ STATES — RULES:
 
 State JSON shape:
 {
-  "name": "German concise state name",
+  "name": "${exampleName}",
   "type": "AI",
   "orderIndex": 0,
   "rules": "",
@@ -110,7 +117,7 @@ State JSON shape:
 QUALIFICATION FIELDS (optional — only when flow implies data collection):
 {
   "key": "camelCaseKey",
-  "label": "Deutsches Label",
+  "label": "${exampleLabel}",
   "type": "text|number|enum|boolean|date",
   "options": ["Option1", "Option2"],
   "required": true,
@@ -119,6 +126,7 @@ QUALIFICATION FIELDS (optional — only when flow implies data collection):
 }
 
 Respond ONLY with valid JSON. No markdown. No explanation outside the JSON.`
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -127,16 +135,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { prompt } = await req.json()
+    const { prompt, language } = await req.json()
     if (!prompt || typeof prompt !== "string" || prompt.trim().length < 5) {
       return NextResponse.json({ error: "Prompt must be at least 5 characters" }, { status: 400 })
     }
+
+    const lang = language === "de" ? "de" : "en"
 
     const response = await aiRegistry.execute({
       boardId: "global",
       purpose: "main",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: buildSystemPrompt(lang) },
         { role: "user", content: prompt.trim() },
       ],
     })

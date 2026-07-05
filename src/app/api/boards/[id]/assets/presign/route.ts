@@ -40,10 +40,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const r2Key = `boards/${params.id}/${uid}-${slugify(fileName)}`
 
   try {
+    console.log("[asset-presign] Generating presigned URL for key:", r2Key)
     const presignedUrl = await getPresignedUploadUrl(r2Key, contentType, 900)
-    const urlBase = presignedUrl.split("?")[0]
-    console.log("[asset-presign] URL-Stil:", urlBase.includes("//" + requireEnv("R2_BUCKET_NAME") + ".") ? "VIRTUAL-HOSTED" : "PATH-STYLE")
-    console.log("[asset-presign] URL-Base:", urlBase)
     return NextResponse.json({ presignedUrl, r2Key })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

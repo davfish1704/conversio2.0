@@ -1,7 +1,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
-function requireEnv(key: string): string {
+export function requireEnv(key: string): string {
   const val = process.env[key]
   if (!val) throw new Error(`Missing required env var: ${key}`)
   return val
@@ -54,13 +54,20 @@ export async function getPresignedUploadUrl(
   contentType: string,
   expiresIn = 3600
 ): Promise<string> {
-  return getSignedUrl(
+  const bucket = requireEnv("R2_BUCKET_NAME")
+  const presignedUrl = await getSignedUrl(
     getR2Client(),
     new PutObjectCommand({
-      Bucket: requireEnv("R2_BUCKET_NAME"),
+      Bucket: bucket,
       Key: key,
       ContentType: contentType,
     }),
     { expiresIn }
   )
+  const urlBase = presignedUrl.split("?")[0]
+  console.log("[r2-presign] Bucket:", bucket)
+  console.log("[r2-presign] Object key:", key)
+  console.log("[r2-presign] URL-Base:", urlBase)
+  console.log("[r2-presign] URL-Stil:", urlBase.includes("//" + bucket + ".") ? "VIRTUAL-HOSTED" : "PATH-STYLE")
+  return presignedUrl
 }

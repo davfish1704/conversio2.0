@@ -53,7 +53,7 @@ export default function PromptGenerator({ boardId: _boardId, existingStatesCount
   const [previewStates, setPreviewStates] = useState<GeneratedState[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const { t } = useContext(LanguageContext)
+  const { t, language } = useContext(LanguageContext)
 
   const generateFlow = async () => {
     if (!prompt.trim()) return
@@ -64,7 +64,7 @@ export default function PromptGenerator({ boardId: _boardId, existingStatesCount
       const res = await fetch("/api/ai/generate-flow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), language }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || t("promptGenerator.flowGenerationFailed")); return }
