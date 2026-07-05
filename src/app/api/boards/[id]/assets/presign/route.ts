@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Ungültige Dateigröße" }, { status: 400 })
   }
   if (size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "Datei zu groß (max. 25 MB)" }, { status: 400 })
+    return NextResponse.json({ error: `Datei zu groß (max. ${MAX_FILE_SIZE / 1024 / 1024} MB)` }, { status: 400 })
   }
 
   const uid = crypto.randomUUID().replace(/-/g, "").slice(0, 12)
@@ -41,6 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   try {
     const presignedUrl = await getPresignedUploadUrl(r2Key, contentType, 900)
+    const urlBase = presignedUrl.split("?")[0]
+    console.log("[asset-presign] URL-Stil:", urlBase.includes("//" + requireEnv("R2_BUCKET_NAME") + ".") ? "VIRTUAL-HOSTED" : "PATH-STYLE")
+    console.log("[asset-presign] URL-Base:", urlBase)
     return NextResponse.json({ presignedUrl, r2Key })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

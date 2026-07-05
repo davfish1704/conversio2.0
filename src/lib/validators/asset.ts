@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-export const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 MB
+export const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500 MB
 
 export const ALLOWED_MIME_TYPES: Record<string, "IMAGE" | "PDF" | "AUDIO" | "VIDEO" | "DOCUMENT"> = {
   "image/jpeg":   "IMAGE",

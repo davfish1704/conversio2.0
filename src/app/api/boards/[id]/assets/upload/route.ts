@@ -35,7 +35,7 @@ export async function POST(
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "Datei zu groß (max. 25 MB)" }, { status: 400 })
+    return NextResponse.json({ error: `Datei zu groß (max. ${MAX_FILE_SIZE / 1024 / 1024} MB)` }, { status: 400 })
   }
 
   if (file.size === 0) {

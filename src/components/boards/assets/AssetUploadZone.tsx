@@ -23,15 +23,25 @@ interface FileEntry {
 
 function uploadXHR(url: string, file: File, onProgress: (p: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
+    const urlBase = url.split("?")[0]
+    console.log("[uploadXHR] PUT an:", urlBase)
+    console.log("[uploadXHR] Content-Type:", file.type)
+    console.log("[uploadXHR] Dateigröße:", file.size)
     const xhr = new XMLHttpRequest()
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
     }
-    xhr.onload = () =>
+    xhr.onload = () => {
+      console.log("[uploadXHR] Status:", xhr.status)
+      console.log("[uploadXHR] Response:", xhr.responseText?.slice(0, 500))
       xhr.status >= 200 && xhr.status < 300
         ? resolve()
-        : reject(new Error(`R2 abgelehnt (HTTP ${xhr.status})`))
-    xhr.onerror = () => reject(new Error("Netzwerkfehler beim Upload zu R2"))
+        : reject(new Error(`R2 abgelehnt (HTTP ${xhr.status}): ${xhr.responseText?.slice(0, 200) || "—"}`))
+    }
+    xhr.onerror = () => {
+      console.error("[uploadXHR] Netzwerkfehler — CORS? DNS? Verbindung abgelehnt?")
+      reject(new Error("Netzwerkfehler beim Upload zu R2"))
+    }
     xhr.open("PUT", url)
     xhr.setRequestHeader("Content-Type", file.type)
     xhr.send(file)
@@ -95,6 +105,7 @@ export function AssetUploadZone({ boardId, onUploaded }: AssetUploadZoneProps) {
         patchEntry(entry.id, { status: "done", progress: 100 })
         onUploaded(cData)
       } catch (err) {
+        console.error("[asset-upload]", err)
         patchEntry(entry.id, {
           status: "error",
           error: err instanceof Error ? err.message : "Upload fehlgeschlagen",
@@ -203,7 +214,7 @@ export function AssetUploadZone({ boardId, onUploaded }: AssetUploadZoneProps) {
           <Upload className="h-8 w-8" />
           <p className="text-sm font-medium">Dateien hierher ziehen oder klicken</p>
           <p className="text-xs opacity-70">
-            Bilder, PDFs, Audio, Video, Dokumente · max. 25 MB · Mehrfachauswahl möglich
+            Bilder, PDFs, Audio, Video, Dokumente · max. 500 MB · Mehrfachauswahl möglich
           </p>
         </div>
       </div>
