@@ -3,6 +3,15 @@ import { getTool, type ToolExecutionContext, type ToolResult } from "./registry"
 import type { ToolCall } from "@/lib/ai/providers/types"
 import type { Conversation, Board, State } from "@prisma/client"
 
+// Tools that are always allowed regardless of state configuration.
+// Must match ALWAYS_ON_TOOLS in sub-agent-runtime.ts.
+const ALWAYS_ALLOWED_TOOLS = [
+  "handoff_proposed",
+  "escalate_to_supervisor",
+  "search_assets",
+  "send_asset",
+]
+
 export interface ExecutedToolCall {
   tool_call_id: string
   toolName: string
@@ -31,7 +40,11 @@ export async function executeToolCalls(params: {
     if (!tool) {
       error = `Unbekanntes Tool: '${toolCall.name}'`
       result = { success: false, error }
-    } else if (allowedTools.length > 0 && !allowedTools.includes(toolCall.name)) {
+    } else if (
+      allowedTools.length > 0 &&
+      !allowedTools.includes(toolCall.name) &&
+      !ALWAYS_ALLOWED_TOOLS.includes(toolCall.name)
+    ) {
       error = `Tool '${toolCall.name}' ist für diesen State nicht erlaubt. Erlaubt: ${allowedTools.join(", ")}`
       result = { success: false, error }
     } else {

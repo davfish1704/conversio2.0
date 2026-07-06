@@ -21,7 +21,18 @@ import {
 import type { QualificationField } from "@/lib/types"
 
 // Always available in every AI state
-const ALWAYS_ON_TOOLS = ["handoff_proposed", "escalate_to_supervisor"]
+const ALWAYS_ON_TOOLS = ["handoff_proposed", "escalate_to_supervisor", "search_assets", "send_asset"]
+
+// Keywords that trigger automatic asset pre-retrieval
+const ASSET_TRIGGER_KEYWORDS = [
+  "broschüre", "prospekt", "flyer", "unterlagen", "dokument", "pdf",
+  "grundriss", "lageplan", "exposé", "katalog", "preisliste",
+  "präsentation", "vertrag", "formular", "antrag", "bild", "foto",
+  "video", "anlage", "finanzierungsplan", "roi", "rentabilität",
+  "brochure", "document", "floor plan", "price list", "presentation",
+  "contract", "form", "image", "photo", "picture", "kostenaufstellung",
+  "werte", "datenblatt", "spezifikation", "produktinfo",
+]
 const MAX_TOOL_ITERATIONS = 5
 
 export interface SubAgentRunInput {
@@ -80,6 +91,13 @@ export async function executeSubAgentRun(
     return earlyExit("LLM_ERROR", "Board hat kein Brain konfiguriert")
   }
 
+  // ── Log: Current state context ────────────────────────────────────────────
+  console.log(
+    `[AgentRuntime] conversation=${conversationId} state="${state.name}" ` +
+    `goal="${(state as any).agentGoal?.slice(0, 80) ?? "kein goal"}" ` +
+    `language=${brain.language ?? "de"} nextStateId=${(state as any).nextStateId ?? "none"}`,
+  )
+
   // ── Step 2: Load History + Memory ─────────────────────────────────────────
 
   const historyRows = await prisma.message.findMany({
@@ -101,6 +119,43 @@ export async function executeSubAgentRun(
     rules: board.brainRules     ?? [],
     faqs:  board.brainFAQs      ?? [],
     docs:  board.brainDocuments ?? [],
+  }
+
+  // ── Step 3b: Automatic Asset Pre-Retrieval ─────────────────────────────────
+  // Scan the user message for asset-related keywords BEFORE building the prompt.
+  // If a match is found, query the board's assets and inject them into context.
+  const lowerMsg = userMessage.toLowerCase()
+  const wantsAsset = ASSET_TRIGGER_KEYWORDS.some((kw) => lowerMsg.includes(kw))
+
+  let retrievedAssets: { id: string; name: string; type: string; publicUrl: string; description: string | null }[] = []
+
+  if (wantsAsset) {
+    console.log(`[AgentRuntime] Asset-Trigger erkannt in: "${userMessage.slice(0, 80)}"`)
+    try {
+      const searchTerms = [userMessage.slice(0, 60)]
+      if (userMessage.split(" ").length > 1) {
+        searchTerms.push(...userMessage.split(" ").slice(0, 5))
+      }
+
+      const orConditions: Array<{ name?: { contains: string; mode: "insensitive" }; description?: { contains: string; mode: "insensitive" } }> = []
+      for (const term of searchTerms) {
+        if (!term || term.length < 2) continue
+        orConditions.push({ name: { contains: term, mode: "insensitive" } })
+        orConditions.push({ description: { contains: term, mode: "insensitive" } })
+      }
+
+      retrievedAssets = await prisma.asset.findMany({
+        where: { boardId, OR: orConditions },
+        select: { id: true, name: true, type: true, publicUrl: true, description: true },
+        take: 5,
+      })
+      console.log(`[AgentRuntime] Auto-Assets gefunden: ${retrievedAssets.length}`)
+      for (const a of retrievedAssets) {
+        console.log(`  → ${a.name} (${a.type}) ${a.publicUrl}`)
+      }
+    } catch (assetErr) {
+      console.error("[AgentRuntime] Asset pre-retrieval fehlgeschlagen:", assetErr)
+    }
   }
 
   // ── Step 4: Build System Prompt ────────────────────────────────────────────
@@ -147,15 +202,26 @@ export async function executeSubAgentRun(
     language:          brain.language ?? "de",
     qualificationFields: qualificationFields.length > 0 ? qualificationFields : undefined,
     currentStateId:    state.id,
+    retrievedAssets:   retrievedAssets.length > 0 ? retrievedAssets : undefined,
   }
 
   const systemPrompt = buildSubAgentSystemPrompt(promptInput)
+
+  // ── Log: Prompt Stats ────────────────────────────────────────────────────
+  console.log(
+    `[AgentRuntime] Prompt=${systemPrompt.length}chars ` +
+    `assetsInPrompt=${retrievedAssets.length} ` +
+    `history=${historyRows.length} ` +
+    `brainDocs=${knowledge.docs.length} brainRules=${knowledge.rules.length} brainFAQs=${knowledge.faqs.length}`,
+  )
 
   // ── Step 5: Prepare Tools ──────────────────────────────────────────────────
 
   const configuredTools = (stateData.availableTools as string[]) ?? []
   const toolNames = [...new Set([...configuredTools, ...ALWAYS_ON_TOOLS])]
   const toolDefs = getToolDefinitions(toolNames)
+
+  console.log(`[AgentRuntime] Tools=${toolNames.join(",")}`)
 
   // ── Step 6: Build Initial Messages ────────────────────────────────────────
 
@@ -219,6 +285,13 @@ export async function executeSubAgentRun(
         temperature: brain.temperature ?? 0.7,
         maxTokens: brain.maxTokens ?? 1024,
       })
+
+      console.log(
+        `[AgentRuntime] LLM call #${iteration + 1}: ` +
+        `toolCalls=${response.toolCalls?.length ?? 0} ` +
+        `contentLen=${response.content?.length ?? 0} ` +
+        `model=${response.model ?? "?"} provider=${response.provider ?? "?"}`,
+      )
 
       usedModel    = response.model    ?? usedModel
       usedProvider = response.provider ?? usedProvider
@@ -389,6 +462,13 @@ export async function executeSubAgentRun(
       rulesEval,
     })
 
+    console.log(
+      `[AgentRuntime] Handoff: proposed=${handoffCalled} mode=${mode} ` +
+      `confidence=${agentConfidence} minConf=${minConfidence} ` +
+      `rulesPassed=${rulesEval.passedCount}/${rulesEval.totalCount} ` +
+      `approved=${decision.approved} reason="${decision.reason}"`,
+    )
+
     if (decision.approved) {
       const targetId = suggestedTargetStateId ?? (state as typeof state & { nextStateId: string | null }).nextStateId
       if (targetId) {
@@ -506,11 +586,22 @@ export async function executeSubAgentRun(
     )
     .catch((e: unknown) => console.error("[AgentRuntime] Reactive trigger check fehlgeschlagen:", e))
 
+  // ── Log: Final Result ────────────────────────────────────────────────────
+  const finalAction = deriveAction(outcome, transitioned)
+  console.log(
+    `[AgentRuntime] Result: action=${finalAction} outcome=${outcome} ` +
+    `transitioned=${transitioned} targetState=${resolvedTargetStateId ?? "none"} ` +
+    `handoffProposed=${handoffCalled} confidence=${agentConfidence} ` +
+    `hasResponse=${!!cleanedText} responseLen=${cleanedText?.length ?? 0} ` +
+    `tokens=${totalInputTokens + totalOutputTokens} latency=${Date.now() - runStart}ms ` +
+    `language=${brain.language}`,
+  )
+
   // ── Return ─────────────────────────────────────────────────────────────────
 
   return {
     responseText:    cleanedText,
-    action:          deriveAction(outcome, transitioned),
+    action:          finalAction,
     targetStateId:   resolvedTargetStateId,
     handoffProposed: handoffCalled,
     agentConfidence,

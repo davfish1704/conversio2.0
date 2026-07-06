@@ -41,4 +41,6 @@ export const DEFAULT_AI_STATE_TOOLS = [
   "update_lead_data",
   "advance_state",
   "escalate_to_human",
+  "search_assets",
+  "send_asset",
 ]

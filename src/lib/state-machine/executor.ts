@@ -3,6 +3,7 @@ import { transitionState, getCurrentState } from "@/lib/state-machine"
 import { enqueueJob } from "@/lib/jobs/enqueue"
 import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
 import { executeSubAgentRun } from "@/lib/agents/sub-agent-runtime"
+import { evaluateMissionCompletion } from "./mission-evaluator"
 
 export interface ExecutionResult {
   skipped?: boolean
@@ -217,7 +218,9 @@ async function executeAIState(
     customData: unknown
     currentStateId: string | null
     followupCount: number
+    conversationSummary: string | null
     lead?: { customData: Record<string, unknown> } | null
+    board?: { brain?: { language: string } | null } | null
   },
   state: {
     id: string
@@ -228,6 +231,7 @@ async function executeAIState(
     dataToCollect: unknown
     completionRule: string | null
     availableTools: unknown
+    agentGoal?: string | null
     escalateOnNoReply: number | null
     escalateOnLowConfidence: boolean
     escalateOnOffMission: boolean
@@ -254,11 +258,58 @@ async function executeAIState(
   }
 
   if (result.action === "transition" && result.targetStateId) {
+    console.log(`[Executor] AI transition → ${result.targetStateId}`)
     return { sent: !!result.responseText, advanced: true, newStateId: result.targetStateId }
   }
 
   if (result.action === "escalate") {
+    console.log(`[Executor] Escalated for conversation ${conversationId}`)
     return { sent: false, reason: "escalated" }
+  }
+
+  // ── Auto Mission Evaluation ──────────────────────────────────────────────
+  // If the AI didn't transition but has a mission/goal and a next state,
+  // evaluate via LLM whether the mission is complete and auto-transition.
+  if (
+    state.agentGoal &&
+    state.nextStateId &&
+    result.action === "respond"
+  ) {
+    try {
+      const recentMessages = await prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { timestamp: "desc" },
+        take: 8,
+        select: { direction: true, content: true },
+      })
+      recentMessages.reverse()
+
+      const missionEval = await evaluateMissionCompletion({
+        agentGoal: state.agentGoal,
+        stateName: state.name,
+        recentMessages,
+        leadData: (conversation.lead?.customData as Record<string, unknown>) ?? {},
+        conversationSummary: conversation.conversationSummary ?? null,
+        language: conversation.board?.brain?.language ?? "de",
+        boardId,
+      })
+
+      console.log(
+        `[Executor] Mission-Eval: completed=${missionEval.completed} ` +
+        `confidence=${missionEval.confidence} reason="${missionEval.reason}"`,
+      )
+
+      if (missionEval.completed && missionEval.confidence >= 0.5) {
+        await transitionState(conversationId, state.nextStateId, "ai_advance")
+        return {
+          sent: !!result.responseText,
+          advanced: true,
+          newStateId: state.nextStateId,
+        }
+      }
+    } catch (evalErr) {
+      console.error("[Executor] Mission evaluation failed:", evalErr)
+    }
   }
 
   return { sent: !!result.responseText }

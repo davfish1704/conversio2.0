@@ -135,7 +135,7 @@ export function buildSystemPrompt(
     )
   }
 
-  const lang = options.language || brain.language || "en"
+  const lang = options.language || brain.language || "de"
   parts.push(buildLanguageEnforcement(lang))
 
   return parts.join("\n\n")

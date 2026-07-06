@@ -47,6 +47,9 @@ export interface PromptBuilderInput {
   qualificationFields?: QualificationField[]
   /** Current state ID — used to filter fields by stateKeys. */
   currentStateId?: string
+
+  /** Automatically retrieved assets matching the user's request */
+  retrievedAssets?: { id: string; name: string; type: string; publicUrl: string; description: string | null }[]
 }
 
 export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
@@ -102,6 +105,16 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
       remaining -= snippet.length
     }
     parts.push(`## Wissensdatenbank\n${snippets.join("\n\n")}`)
+  }
+
+  // ── Section 5b: Retrieved Assets ──────────────────────────────────────────
+  // Automatically found assets matching the user's request. The AI should
+  // reference these naturally and use send_asset to deliver them.
+  if (input.retrievedAssets && input.retrievedAssets.length > 0) {
+    const lines = input.retrievedAssets.map(
+      (a) => `- ${a.name} (${a.type}): ${a.description ?? "Keine Beschreibung"}\n  URL: ${a.publicUrl}`,
+    )
+    parts.push(`## Gefundene Assets\nDer Lead hat nach Dokumenten oder Medien gefragt. Folgende Assets wurden in der Bibliothek gefunden:\n\n${lines.join("\n\n")}\n\nVerwende \`send_asset\` mit der entsprechenden assetId um das Asset zu versenden. Erwähne das Asset natürlich in deiner Antwort. Versprich NIE ein Dokument das bereits existiert — sende es sofort.`)
   }
 
   // ── Section 6: Memory & Collected Data ────────────────────────────────────
