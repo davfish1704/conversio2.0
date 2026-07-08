@@ -173,6 +173,9 @@ export function sanitizeAIOutput(text: string): string {
     "",
   )
 
+  // Strip mission completion markers — internal signal, not for the user
+  cleaned = cleaned.replace(/\[MISSION_(COMPLETED|IN_PROGRESS)\]\s*/gi, "")
+
   cleaned = cleaned
     .replace(/\n{3,}/g, "\n\n")
     .trim()

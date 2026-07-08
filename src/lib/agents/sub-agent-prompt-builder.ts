@@ -219,6 +219,19 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
     )
   }
 
+  // ── Mission Completion Marker ────────────────────────────────────────────
+  // Embed the evaluation directly in the main LLM response so no second call
+  // is needed. The marker is parsed after response generation.
+  if (input.agentGoal) {
+    parts.push(
+      `## Missions-Status\n` +
+      `Beende deine Antwort mit einem Missions-Status-Marker auf einer eigenen Zeile:\n` +
+      `- \`[MISSION_COMPLETED]\` wenn deine Mission (siehe "Dein Ziel in diesem State") vollständig erfüllt ist.\n` +
+      `- \`[MISSION_IN_PROGRESS]\` wenn du noch in Bearbeitung bist oder auf eine Lead-Antwort wartest.\n\n` +
+      `Richte dich nach den gleichen Kriterien wie für \`handoff_proposed\`. Der Marker ersetzt NICHT den Tool-Aufruf, dient aber als zusätzliches Signal.`,
+    )
+  }
+
   const lang = input.language ?? input.brain.language ?? "de"
   parts.push(buildLanguageEnforcement(lang))
 

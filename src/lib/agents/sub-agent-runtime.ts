@@ -257,15 +257,10 @@ export async function executeSubAgentRun(
   let outcome: AgentRunOutcome = "SUCCESS_CONTINUE"
   let errorMessage: string | undefined
 
-  const conversationForTools = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-  })
-  const boardForTools = await prisma.board.findUnique({ where: { id: boardId } })
-  const stateForTools = await prisma.state.findUnique({ where: { id: state.id } })
-
-  if (!conversationForTools || !boardForTools || !stateForTools) {
-    return earlyExit("LLM_ERROR", "Konnte Entities für Tool-Execution nicht laden")
-  }
+  // Reuse already-loaded entities — avoid 3 redundant Prisma queries
+  const conversationForTools = conversation as any
+  const boardForTools = board as any
+  const stateForTools = state as any
 
   const toolContext = {
     conversationId,
@@ -299,8 +294,8 @@ export async function executeSubAgentRun(
       totalOutputTokens += response.usage?.outputTokens ?? 0
       totalCostCents    += (response.providerCost ?? 0) * 100
 
-      // ── Bug Fix: Write UsageLog immediately after every LLM call ──────────
-      await prisma.usageLog.create({
+      // ── Write UsageLog (fire-and-forget — non-blocking) ───────────────────
+      prisma.usageLog.create({
         data: {
           boardId,
           conversationId,
@@ -404,7 +399,7 @@ export async function executeSubAgentRun(
       totalInputTokens  += forced.usage?.inputTokens  ?? 0
       totalOutputTokens += forced.usage?.outputTokens ?? 0
       totalCostCents    += (forced.providerCost ?? 0) * 100
-      await prisma.usageLog.create({
+      prisma.usageLog.create({
         data: {
           boardId,
           conversationId,

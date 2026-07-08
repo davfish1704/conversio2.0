@@ -5,6 +5,9 @@ import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
 import { executeSubAgentRun } from "@/lib/agents/sub-agent-runtime"
 import { evaluateMissionCompletion } from "./mission-evaluator"
 
+// Matches [MISSION_COMPLETED] or [MISSION_IN_PROGRESS] anywhere in text
+const MISSION_MARKER_RE = /\[MISSION_(COMPLETED|IN_PROGRESS)\]/i
+
 export interface ExecutionResult {
   skipped?: boolean
   reason?: string
@@ -85,12 +88,12 @@ export async function executeStateForConversation(
       if (conditional.matchImpossible) {
         return { skipped: true, reason: "condition_not_met" }
       }
-      return executeAIState(conversationId, conversation, stateData, board.id)
+      return executeAIState(conversationId, conversation, stateData, board.id, userMessage)
     }
 
     case "AI":
     default:
-      return executeAIState(conversationId, conversation, stateData, board.id)
+      return executeAIState(conversationId, conversation, stateData, board.id, userMessage)
   }
 }
 
@@ -237,12 +240,9 @@ async function executeAIState(
     escalateOnOffMission: boolean
   },
   boardId: string,
+  overrideUserMessage?: string,
 ): Promise<ExecutionResult> {
-  const lastInbound = await prisma.message.findFirst({
-    where: { conversationId, direction: "INBOUND" },
-    orderBy: { timestamp: "desc" },
-  })
-  const userMessage = lastInbound?.content ?? ""
+  const userMessage = overrideUserMessage ?? ""
 
   const result = await executeSubAgentRun({ conversationId, boardId, userMessage })
 
@@ -268,47 +268,60 @@ async function executeAIState(
   }
 
   // ── Auto Mission Evaluation ──────────────────────────────────────────────
-  // If the AI didn't transition but has a mission/goal and a next state,
-  // evaluate via LLM whether the mission is complete and auto-transition.
+  // Parse the [MISSION_COMPLETED] / [MISSION_IN_PROGRESS] marker from the AI's
+  // response instead of making a second LLM call. Falls back to LLM evaluator
+  // only when the marker is missing (rare edge case).
   if (
     state.agentGoal &&
     state.nextStateId &&
-    result.action === "respond"
+    result.action === "respond" &&
+    result.responseText
   ) {
-    try {
-      const recentMessages = await prisma.message.findMany({
-        where: { conversationId },
+    const markerMatch = result.responseText.match(MISSION_MARKER_RE)
+    const isCompleted = markerMatch?.[1]?.toUpperCase() === "COMPLETED"
+
+    if (isCompleted) {
+      console.log(`[Executor] Mission marker COMPLETED → auto-transition to ${state.nextStateId}`)
+      await transitionState(conversationId, state.nextStateId, "ai_advance")
+      return { sent: true, advanced: true, newStateId: state.nextStateId }
+    }
+
+    // No marker found → fall back to LLM evaluator (async, non-blocking)
+    if (!markerMatch) {
+      const language = conversation.board?.brain?.language ?? "de"
+      const leadData = (conversation.lead?.customData as Record<string, unknown>) ?? {}
+      const summary = conversation.conversationSummary ?? null
+      const goal = state.agentGoal
+      const sName = state.name
+      const nxtStateId = state.nextStateId
+      const convId = conversationId
+
+      prisma.message.findMany({
+        where: { conversationId: convId },
         orderBy: { timestamp: "desc" },
         take: 8,
         select: { direction: true, content: true },
-      })
-      recentMessages.reverse()
-
-      const missionEval = await evaluateMissionCompletion({
-        agentGoal: state.agentGoal,
-        stateName: state.name,
-        recentMessages,
-        leadData: (conversation.lead?.customData as Record<string, unknown>) ?? {},
-        conversationSummary: conversation.conversationSummary ?? null,
-        language: conversation.board?.brain?.language ?? "de",
-        boardId,
-      })
-
-      console.log(
-        `[Executor] Mission-Eval: completed=${missionEval.completed} ` +
-        `confidence=${missionEval.confidence} reason="${missionEval.reason}"`,
-      )
-
-      if (missionEval.completed && missionEval.confidence >= 0.5) {
-        await transitionState(conversationId, state.nextStateId, "ai_advance")
-        return {
-          sent: !!result.responseText,
-          advanced: true,
-          newStateId: state.nextStateId,
+      }).then((recentMessages) => {
+        recentMessages.reverse()
+        return evaluateMissionCompletion({
+          agentGoal: goal,
+          stateName: sName,
+          recentMessages,
+          leadData,
+          conversationSummary: summary,
+          language,
+          boardId,
+        })
+      }).then((evalResult) => {
+        if (evalResult.completed && evalResult.confidence >= 0.5) {
+          console.log(`[Executor] LLM fallback: mission completed → transition`)
+          transitionState(convId, nxtStateId!, "ai_advance").catch((e: unknown) =>
+            console.error("[Executor] Fallback transition failed:", e),
+          )
         }
-      }
-    } catch (evalErr) {
-      console.error("[Executor] Mission evaluation failed:", evalErr)
+      }).catch((e: unknown) =>
+        console.error("[Executor] Fallback mission eval failed:", e),
+      )
     }
   }
 
