@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db"
 import type { JobType, JobPayload } from "./enqueue"
 
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
+
 const conversationLocks = new Map<string, Promise<void>>()
 
 async function acquireConversationLock(
@@ -8,34 +13,56 @@ async function acquireConversationLock(
   fn: () => Promise<void>,
 ): Promise<void> {
   if (!conversationId) {
+    flowLog("lock_acquire_immediate", "no conversationId")
     await fn()
+    flowLog("lock_release", "no conversationId")
     return
   }
+
+  const hasExisting = conversationLocks.has(conversationId)
+  flowLog("lock_acquire", `convId=${conversationId} hasExisting=${hasExisting}`)
 
   const prev = conversationLocks.get(conversationId) ?? Promise.resolve()
   const next = prev.then(fn, fn)
   conversationLocks.set(conversationId, next)
-  await next
+
+  const start = Date.now()
+  try {
+    await next
+    flowLog("lock_release", `convId=${conversationId} durationMs=${Date.now() - start}`)
+  } catch (err) {
+    flowLog("lock_release_error", `convId=${conversationId} durationMs=${Date.now() - start}`, { error: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
 }
 
 export async function processNextBatch(limit = 10): Promise<number> {
   const now = new Date()
 
-  const claimed = await prisma.$queryRaw<Array<{ id: string }>>`
-    UPDATE "jobs"
-    SET status = 'RUNNING'::"JobStatus", "startedAt" = NOW(), attempts = attempts + 1
-    WHERE id IN (
-      SELECT id FROM "jobs"
-      WHERE status = 'PENDING'::"JobStatus"
-        AND "scheduledFor" <= ${now}
-        AND attempts < "maxAttempts"
-      ORDER BY "scheduledFor" ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id
-  `
+  flowLog("cron_start", `limit=${limit}`)
 
+  let claimed: Array<{ id: string }>
+  try {
+    claimed = await prisma.$queryRaw<Array<{ id: string }>>`
+      UPDATE "jobs"
+      SET status = 'RUNNING'::"JobStatus", "startedAt" = NOW(), attempts = attempts + 1
+      WHERE id IN (
+        SELECT id FROM "jobs"
+        WHERE status = 'PENDING'::"JobStatus"
+          AND "scheduledFor" <= ${now}
+          AND attempts < "maxAttempts"
+        ORDER BY "scheduledFor" ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id
+    `
+  } catch (err) {
+    flowLog("cron_claim_error", `err=${err instanceof Error ? err.message : String(err)}`)
+    return 0
+  }
+
+  flowLog("cron_claimed", `count=${claimed.length}`)
   if (claimed.length === 0) return 0
 
   let processed = 0
@@ -43,7 +70,13 @@ export async function processNextBatch(limit = 10): Promise<number> {
   await Promise.all(
     claimed.map(async ({ id }) => {
       const job = await prisma.job.findUnique({ where: { id } })
-      if (!job) return
+      if (!job) {
+        flowLog("cron_job_not_found", `jobId=${id}`)
+        return
+      }
+
+      const convId = (job.payload as Record<string, unknown> | null)?.conversationId as string | undefined
+      flowLog("cron_job_start", `jobId=${id} type=${job.type} convId=${convId ?? "none"} attempt=${job.attempts}/${job.maxAttempts}`)
 
       try {
         await executeJob(job.type as JobType, job.payload as JobPayload)
@@ -52,10 +85,13 @@ export async function processNextBatch(limit = 10): Promise<number> {
           data: { status: "COMPLETED", completedAt: new Date() },
         })
         processed++
+        flowLog("cron_job_completed", `jobId=${id} convId=${convId ?? "none"}`)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         const willRetry = job.attempts < job.maxAttempts
         const backoffMs = 60 * 1000 * Math.pow(2, job.attempts)
+
+        flowLog("cron_job_error", `jobId=${id} convId=${convId ?? "none"} attempt=${job.attempts} willRetry=${willRetry}`, { error: errorMsg.slice(0, 200) })
 
         await prisma.job.update({
           where: { id },
@@ -105,6 +141,7 @@ export async function processNextBatch(limit = 10): Promise<number> {
     }),
   )
 
+  flowLog("cron_end", `processed=${processed} outOf=${claimed.length}`)
   return processed
 }
 

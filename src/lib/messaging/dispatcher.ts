@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/crypto/secrets"
 
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
+
 export interface SendResult {
   ok: boolean
   externalMessageId?: string
@@ -87,37 +92,40 @@ async function fetchWhatsAppCreds(boardId: string | null) {
 // ─── sendMessage (text) ──────────────────────────────────────────────────────
 
 export async function sendMessage(conversationId: string, text: string): Promise<SendResult> {
+  flowLog("dispatcher_send", `convId=${conversationId} channel=... textLen=${text.length}`)
   const conversation = await fetchConversationRouting(conversationId)
-  if (!conversation) return { ok: false, error: "Conversation not found" }
+  if (!conversation) { flowLog("dispatcher_error", `convId=${conversationId} err=conversation_not_found`); return { ok: false, error: "Conversation not found" } }
 
   const channel = conversation.channel || "whatsapp"
   const boardId = conversation.boardId
+  flowLog("dispatcher_channel", `convId=${conversationId} channel=${channel}`)
 
   if (channel === "telegram") {
     const token = await fetchTelegramToken(boardId)
-    if (!token) return { ok: false, error: "No Telegram token configured" }
+    if (!token) { flowLog("dispatcher_error", `convId=${conversationId} err=no_telegram_token`); return { ok: false, error: "No Telegram token configured" } }
 
     const chatId = conversation.externalId || conversation.lead?.phone
-    console.log("[telegram-send] token found:", !!token, "chatId:", chatId)
+    flowLog("dispatcher_telegram_send", `convId=${conversationId} chatId=${chatId}`)
     const res  = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ chat_id: chatId, text }),
     })
     const data = await res.json()
-    console.log("[telegram-send] API response:", JSON.stringify(data))
     if (!data.ok) {
-      console.log("[telegram-send] ERROR:", data.description)
+      flowLog("dispatcher_error", `convId=${conversationId} err=${data.description}`)
       return { ok: false, error: data.description }
     }
+    flowLog("dispatcher_sent", `convId=${conversationId} msgId=${data.result?.message_id}`)
     return { ok: true, externalMessageId: String(data.result?.message_id) }
   }
 
   if (channel === "whatsapp") {
     const creds = await fetchWhatsAppCreds(boardId)
-    if (!creds) return { ok: false, error: "WhatsApp not configured" }
+    if (!creds) { flowLog("dispatcher_error", `convId=${conversationId} err=no_wa_creds`); return { ok: false, error: "WhatsApp not configured" } }
 
     const recipient = conversation.externalId || (conversation.lead?.phone ?? "")
+    flowLog("dispatcher_wa_send", `convId=${conversationId} recipient=${recipient}`)
     const res = await fetch(`https://graph.facebook.com/v18.0/${creds.phoneNumberId}/messages`, {
       method:  "POST",
       headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
@@ -130,10 +138,12 @@ export async function sendMessage(conversationId: string, text: string): Promise
       }),
     })
     const data = await res.json()
-    if (!res.ok) return { ok: false, error: data.error?.message }
+    if (!res.ok) { flowLog("dispatcher_error", `convId=${conversationId} err=${data.error?.message}`); return { ok: false, error: data.error?.message } }
+    flowLog("dispatcher_sent", `convId=${conversationId} msgId=${data.messages?.[0]?.id}`)
     return { ok: true, externalMessageId: data.messages?.[0]?.id }
   }
 
+  flowLog("dispatcher_error", `convId=${conversationId} err=unsupported_channel_${channel}`)
   return { ok: false, error: `Channel ${channel} not supported` }
 }
 
@@ -214,7 +224,9 @@ export async function sendAIResponse(
   conversationId: string,
   text: string,
 ): Promise<SendResult> {
+  flowLog("dispatcher_ai_response", `convId=${conversationId} textLen=${text.length}`)
   const urls = detectAssetUrls(text)
+  flowLog("dispatcher_assets_detected", `convId=${conversationId} urls=${urls.length}`)
 
   if (urls.length === 0) {
     return sendMessage(conversationId, text)

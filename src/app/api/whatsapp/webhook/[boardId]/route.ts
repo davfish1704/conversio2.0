@@ -6,6 +6,11 @@ import { findInviteByToken, consumeInvite } from "@/lib/channel-invites"
 import { webhookLimiter } from "@/lib/rate-limit"
 import { isSpamMessage } from "@/lib/webhook-protection"
 
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
+
 const TOKEN_RE = /^Start\s+([\w-]{10,16})$/
 
 export async function GET(req: NextRequest, { params }: { params: { boardId: string } }) {
@@ -68,60 +73,29 @@ export async function POST(req: NextRequest, { params }: { params: { boardId: st
 async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   const phone = msg.from as string
   const msgId = msg.id as string
+  const msgText = msg.text as Record<string, string> | undefined
+  const content = msgText?.body || (msg.image as Record<string, string> | undefined)?.caption || "[Media]"
+
+  flowLog("incoming_message", `board=${boardId} phone=${phone} msgId=${msgId}`, { content: content.slice(0, 80) })
 
   // Idempotency: skip messages already processed (Meta retries on non-200)
   const already = await prisma.processedWebhook.findUnique({
     where: { externalId_channel_boardId: { externalId: msgId, channel: "whatsapp", boardId } },
   })
-  if (already) return
+  if (already) { flowLog("duplicate_skip", `msgId=${msgId}`); return }
   try {
     await prisma.processedWebhook.create({ data: { externalId: msgId, channel: "whatsapp", boardId } })
   } catch {
+    flowLog("duplicate_skip_concurrent", `msgId=${msgId}`)
     return // concurrent duplicate
   }
 
   // Rate limit: 30 messages per minute per phone number
   const rl = await webhookLimiter(phone)
-  if (!rl.success) return // silently drop excess messages
-
-  const msgText = msg.text as Record<string, string> | undefined
-  const msgImage = msg.image as Record<string, string> | undefined
-  const content = msgText?.body || msgImage?.caption || "[Media]"
+  if (!rl.success) { flowLog("rate_limited", `phone=${phone}`); return }
 
   // Spam check
-  if (isSpamMessage(content)) return
-
-  // Channel-Switch: "Start <token>" erkennen → Invite einlösen
-  const tokenMatch = typeof content === "string" ? content.match(TOKEN_RE) : null
-  if (tokenMatch) {
-    const token = tokenMatch[1]
-    const invite = await findInviteByToken(token)
-    if (invite && invite.status === "PENDING" && new Date(invite.expiresAt) > new Date()) {
-      let conversation = await (prisma as any).conversation.findFirst({
-        where: { leadId: invite.lead.id, channel: "whatsapp", boardId },
-      })
-      if (!conversation) {
-        conversation = await (prisma as any).conversation.create({
-          data: {
-            leadId: invite.lead.id,
-            boardId,
-            channel: "whatsapp",
-            externalId: phone, // WA-Telefon für Outbound-Nachrichten
-            status: "ACTIVE",
-            lastMessageAt: new Date(),
-          },
-        })
-      } else {
-        await (prisma as any).conversation.update({
-          where: { id: conversation.id },
-          data: { externalId: phone, lastMessageAt: new Date() },
-        })
-      }
-      await consumeInvite(token, conversation.id)
-      // Kein Job für die Start-Nachricht
-      return
-    }
-  }
+  if (isSpamMessage(content)) { flowLog("spam_blocked", `content=${content.slice(0, 80)}`); return }
 
   // Normaler Flow: Lead per Telefonnummer suchen oder anlegen
   let lead = await (prisma as any).lead.findFirst({
@@ -131,6 +105,7 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   let conversation = null
 
   if (!lead) {
+    flowLog("new_lead", `phone=${phone}`)
     const board = await prisma.board.findUnique({
       where: { id: boardId },
       include: { states: { orderBy: { orderIndex: "asc" }, take: 1 } },
@@ -158,7 +133,9 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
         lastMessageAt: new Date(),
       },
     })
+    flowLog("lead_conv_created", `leadId=${lead.id} convId=${conversation.id}`)
   } else {
+    flowLog("existing_lead", `leadId=${lead.id} phone=${phone}`)
     conversation = await (prisma as any).conversation.findFirst({
       where: { leadId: lead.id, channel: "whatsapp" },
     })
@@ -173,14 +150,17 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
           lastMessageAt: new Date(),
         },
       })
+      flowLog("new_conv_existing_lead", `convId=${conversation.id}`)
     } else {
       await (prisma as any).conversation.update({
         where: { id: conversation.id },
         data: { lastMessageAt: new Date() },
       })
+      flowLog("existing_conv_found", `convId=${conversation.id}`)
     }
   }
 
+  flowLog("save_message", `convId=${conversation.id}`)
   await prisma.message.create({
     data: {
       conversationId: conversation.id,
@@ -192,10 +172,12 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
     },
   })
 
+  flowLog("enqueue_job", `convId=${conversation.id}`)
   await enqueueJob({
     type: "process_message",
     payload: { conversationId: conversation.id, userMessage: content },
     leadId: lead.id,
     boardId,
   })
+  flowLog("enqueue_done", `convId=${conversation.id}`)
 }

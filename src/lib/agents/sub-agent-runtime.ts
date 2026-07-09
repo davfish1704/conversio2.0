@@ -20,6 +20,11 @@ import {
 } from "./sub-agent-prompt-builder"
 import type { QualificationField } from "@/lib/types"
 
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
+
 // Always available in every AI state
 const ALWAYS_ON_TOOLS = ["handoff_proposed", "escalate_to_supervisor", "search_assets", "send_asset"]
 
@@ -48,6 +53,8 @@ export interface SubAgentRunResult {
   handoffProposed: boolean
   agentConfidence: number | null
   outcome: AgentRunOutcome
+  /** Mission marker parsed from the raw LLM output BEFORE sanitization strips it */
+  rawMissionCompleted: boolean
 }
 
 export async function executeSubAgentRun(
@@ -55,6 +62,8 @@ export async function executeSubAgentRun(
 ): Promise<SubAgentRunResult> {
   const { conversationId, boardId, userMessage } = input
   const runStart = Date.now()
+
+  flowLog("agent_start", `convId=${conversationId}`, { userMessage: userMessage.slice(0, 80) })
 
   // ── Step 1: Load Context ───────────────────────────────────────────────────
 
@@ -73,6 +82,8 @@ export async function executeSubAgentRun(
       lead: { select: { id: true, customData: true, conversations: { select: { channel: true } } } },
     },
   })
+
+  flowLog("agent_ctx_loaded", `convId=${conversationId} found=${!!conversation}`)
 
   if (!conversation) {
     return earlyExit("LLM_ERROR", "Conversation nicht gefunden")
@@ -100,12 +111,14 @@ export async function executeSubAgentRun(
 
   // ── Step 2: Load History + Memory ─────────────────────────────────────────
 
+  flowLog("agent_load_history", `convId=${conversationId}`)
   const historyRows = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { timestamp: "asc" },
     take: 40,
     select: { direction: true, content: true },
   })
+  flowLog("agent_history_loaded", `convId=${conversationId} count=${historyRows.length}`)
 
   const memory = await resolveMemory(conversationId)
   const memoryText = formatMemoryForPrompt(memory)
@@ -207,13 +220,7 @@ export async function executeSubAgentRun(
 
   const systemPrompt = buildSubAgentSystemPrompt(promptInput)
 
-  // ── Log: Prompt Stats ────────────────────────────────────────────────────
-  console.log(
-    `[AgentRuntime] Prompt=${systemPrompt.length}chars ` +
-    `assetsInPrompt=${retrievedAssets.length} ` +
-    `history=${historyRows.length} ` +
-    `brainDocs=${knowledge.docs.length} brainRules=${knowledge.rules.length} brainFAQs=${knowledge.faqs.length}`,
-  )
+  flowLog("agent_prompt_built", `convId=${conversationId} promptChars=${systemPrompt.length} history=${historyRows.length} docs=${knowledge.docs.length} rules=${knowledge.rules.length} faqs=${knowledge.faqs.length} assets=${retrievedAssets.length}`)
 
   // ── Step 5: Prepare Tools ──────────────────────────────────────────────────
 
@@ -272,6 +279,8 @@ export async function executeSubAgentRun(
 
   try {
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+      flowLog("agent_llm_call", `convId=${conversationId} iteration=${iteration + 1}/${MAX_TOOL_ITERATIONS} msgCount=${messages.length}`)
+
       const response = await aiRegistry.execute({
         boardId,
         purpose: "main",
@@ -281,12 +290,7 @@ export async function executeSubAgentRun(
         maxTokens: brain.maxTokens ?? 1024,
       })
 
-      console.log(
-        `[AgentRuntime] LLM call #${iteration + 1}: ` +
-        `toolCalls=${response.toolCalls?.length ?? 0} ` +
-        `contentLen=${response.content?.length ?? 0} ` +
-        `model=${response.model ?? "?"} provider=${response.provider ?? "?"}`,
-      )
+      flowLog("agent_llm_response", `convId=${conversationId} iteration=${iteration + 1} toolCalls=${response.toolCalls?.length ?? 0} contentLen=${response.content?.length ?? 0} model=${response.model ?? "?"} provider=${response.provider ?? "?"}`)
 
       usedModel    = response.model    ?? usedModel
       usedProvider = response.provider ?? usedProvider
@@ -319,6 +323,7 @@ export async function executeSubAgentRun(
       }
 
       // Execute tools
+      flowLog("agent_tool_execute", `convId=${conversationId} iteration=${iteration + 1} toolCount=${response.toolCalls.length} tools=${response.toolCalls.map(t => t.name).join(",")}`)
       const executed = await executeToolCalls({
         toolCalls:    response.toolCalls,
         conversation: conversationForTools,
@@ -326,6 +331,7 @@ export async function executeSubAgentRun(
         state:        stateForTools,
         context:      toolContext,
       })
+      flowLog("agent_tool_results", `convId=${conversationId} results=${executed.map(e => `${e.toolName}:${e.result.success}`).join(",")}`)
 
       for (const ex of executed) {
         const execArgs = response.toolCalls.find((tc) => tc.name === ex.toolName)?.arguments
@@ -341,10 +347,12 @@ export async function executeSubAgentRun(
           agentConfidence       = (callArgs?.confidence as number)           ?? null
           suggestedTargetStateId = (callArgs?.suggestedTargetStateId as string) ?? null
           void raw // acknowledged field is only a signal
+          flowLog("agent_handoff_proposed", `convId=${conversationId} reason=${handoffReason} confidence=${agentConfidence} target=${suggestedTargetStateId}`)
         }
 
         if (ex.toolName === "escalate_to_human" && ex.result.success) {
           outcome = "ESCALATED"
+          flowLog("agent_escalated", `convId=${conversationId}`)
         }
       }
 
@@ -421,7 +429,12 @@ export async function executeSubAgentRun(
     }
   }
 
-  // ── Step 8: Sanitize Output ────────────────────────────────────────────────
+  // ── Step 8: Sanitize Output (check marker BEFORE stripping) ──────────────
+
+  const rawMissionCompleted = finalContent ? /\[MISSION_COMPLETED\]/i.test(finalContent) : false
+  if (rawMissionCompleted) {
+    flowLog("agent_raw_marker", `convId=${conversationId} marker=MISSION_COMPLETED (pre-sanitize)`)
+  }
 
   const cleanedText = finalContent ? sanitizeAIOutput(finalContent) : null
 
@@ -457,12 +470,7 @@ export async function executeSubAgentRun(
       rulesEval,
     })
 
-    console.log(
-      `[AgentRuntime] Handoff: proposed=${handoffCalled} mode=${mode} ` +
-      `confidence=${agentConfidence} minConf=${minConfidence} ` +
-      `rulesPassed=${rulesEval.passedCount}/${rulesEval.totalCount} ` +
-      `approved=${decision.approved} reason="${decision.reason}"`,
-    )
+    flowLog("agent_handoff_decision", `convId=${conversationId} proposed=${handoffCalled} mode=${mode} confidence=${agentConfidence} minConf=${minConfidence} rulesPassed=${rulesEval.passedCount}/${rulesEval.totalCount} approved=${decision.approved} reason="${decision.reason}"`)
 
     if (decision.approved) {
       const targetId = suggestedTargetStateId ?? (state as typeof state & { nextStateId: string | null }).nextStateId
@@ -519,11 +527,12 @@ export async function executeSubAgentRun(
     },
   }).catch((e: unknown) => console.error("[AgentRuntime] AgentRun-Persistierung fehlgeschlagen:", e))
 
-  console.log(`[AgentRuntime] contentStrategy=${usedStrategy} iterations=${iterationsUsed} hasResponse=${!!cleanedText}`)
+  flowLog("agent_sanitized", `convId=${conversationId} strategy=${usedStrategy} iterations=${iterationsUsed} hasResponse=${!!cleanedText} responseLen=${cleanedText?.length ?? 0}`)
 
   // ── Step 11: Send Message ──────────────────────────────────────────────────
 
   if (cleanedText && outcome !== "LLM_ERROR") {
+    flowLog("agent_save_outbound", `convId=${conversationId} len=${cleanedText.length}`)
     await prisma.message.create({
       data: {
         conversationId,
@@ -535,14 +544,20 @@ export async function executeSubAgentRun(
       },
     }).catch((e: unknown) => console.error("[AgentRuntime] Outbound message persistence failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
 
+    flowLog("agent_send_message", `convId=${conversationId}`)
     await sendAIResponse(conversationId, cleanedText).catch((e: unknown) =>
       console.error("[AgentRuntime] Nachricht senden fehlgeschlagen:", e),
     )
 
+    flowLog("agent_update_last_msg", `convId=${conversationId}`)
     await prisma.conversation.update({
       where: { id: conversationId },
       data:  { lastMessageAt: new Date() },
     }).catch((e: unknown) => console.error("[AgentRuntime] Conversation lastMessageAt update failed:", { conversationId, error: e instanceof Error ? e.message : String(e) }))
+
+    flowLog("agent_response_sent", `convId=${conversationId}`)
+  } else {
+    flowLog("agent_skip_send", `convId=${conversationId} reason=${cleanedText ? "LLM_ERROR" : "no_content"}`)
   }
 
   // ── Step 12: Update Memory ─────────────────────────────────────────────────
@@ -583,14 +598,7 @@ export async function executeSubAgentRun(
 
   // ── Log: Final Result ────────────────────────────────────────────────────
   const finalAction = deriveAction(outcome, transitioned)
-  console.log(
-    `[AgentRuntime] Result: action=${finalAction} outcome=${outcome} ` +
-    `transitioned=${transitioned} targetState=${resolvedTargetStateId ?? "none"} ` +
-    `handoffProposed=${handoffCalled} confidence=${agentConfidence} ` +
-    `hasResponse=${!!cleanedText} responseLen=${cleanedText?.length ?? 0} ` +
-    `tokens=${totalInputTokens + totalOutputTokens} latency=${Date.now() - runStart}ms ` +
-    `language=${brain.language}`,
-  )
+  flowLog("agent_complete", `convId=${conversationId} action=${finalAction} outcome=${outcome} transitioned=${transitioned} targetState=${resolvedTargetStateId ?? "none"} handoff=${handoffCalled} confidence=${agentConfidence} hasResponse=${!!cleanedText} tokens=${totalInputTokens + totalOutputTokens} latencyMs=${Date.now() - runStart}`)
 
   // ── Return ─────────────────────────────────────────────────────────────────
 
@@ -601,6 +609,7 @@ export async function executeSubAgentRun(
     handoffProposed: handoffCalled,
     agentConfidence,
     outcome,
+    rawMissionCompleted,
   }
 }
 
@@ -615,6 +624,7 @@ function earlyExit(outcome: AgentRunOutcome, reason: string): SubAgentRunResult 
     handoffProposed: false,
     agentConfidence: null,
     outcome,
+    rawMissionCompleted: false,
   }
 }
 

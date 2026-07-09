@@ -5,8 +5,10 @@ import { sendMessage as dispatchMessage } from "@/lib/messaging/dispatcher"
 import { executeSubAgentRun } from "@/lib/agents/sub-agent-runtime"
 import { evaluateMissionCompletion } from "./mission-evaluator"
 
-// Matches [MISSION_COMPLETED] or [MISSION_IN_PROGRESS] anywhere in text
-const MISSION_MARKER_RE = /\[MISSION_(COMPLETED|IN_PROGRESS)\]/i
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
 
 export interface ExecutionResult {
   skipped?: boolean
@@ -21,6 +23,8 @@ export async function executeStateForConversation(
   conversationId: string,
   userMessage: string,
 ): Promise<ExecutionResult> {
+  flowLog("executor_start", `convId=${conversationId}`, { userMessage: userMessage.slice(0, 80) })
+
   const conversation = await (prisma as any).conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -30,18 +34,20 @@ export async function executeStateForConversation(
     },
   })
 
-  if (!conversation) return { skipped: true, reason: "conversation_not_found" }
-  if (!conversation.board) return { skipped: true, reason: "board_not_found" }
-  if (conversation.frozen) return { skipped: true, reason: "conversation_frozen" }
-  if (!conversation.aiEnabled) return { skipped: true, reason: "ai_disabled" }
+  if (!conversation) { flowLog("executor_skip", `convId=${conversationId} reason=conversation_not_found`); return { skipped: true, reason: "conversation_not_found" } }
+  if (!conversation.board) { flowLog("executor_skip", `convId=${conversationId} reason=board_not_found`); return { skipped: true, reason: "board_not_found" } }
+  if (conversation.frozen) { flowLog("executor_skip", `convId=${conversationId} reason=frozen`); return { skipped: true, reason: "conversation_frozen" } }
+  if (!conversation.aiEnabled) { flowLog("executor_skip", `convId=${conversationId} reason=ai_disabled`); return { skipped: true, reason: "ai_disabled" } }
 
   const board = conversation.board
   const state = conversation.currentState ?? (await getCurrentState(conversationId))
-  if (!state) return { skipped: true, reason: "no_current_state" }
+  if (!state) { flowLog("executor_skip", `convId=${conversationId} reason=no_current_state`); return { skipped: true, reason: "no_current_state" } }
+
+  flowLog("executor_state_loaded", `convId=${conversationId} stateId=${state.id} stateName="${state.name}" stateType=${state.type}`)
 
   const isBoardActive =
     board.adminStatus.toString() !== "SUSPENDED" && board.ownerStatus !== "INACTIVE"
-  if (!isBoardActive) return { skipped: true, reason: "board_inactive" }
+  if (!isBoardActive) { flowLog("executor_skip", `convId=${conversationId} reason=board_inactive`); return { skipped: true, reason: "board_inactive" } }
 
   await maybeScheduleSummarization(
     conversationId,
@@ -65,11 +71,14 @@ export async function executeStateForConversation(
     autoTransition: boolean
   }
 
+  flowLog("executor_dispatch", `convId=${conversationId} type=${stateData.type} stateName="${stateData.name}"`)
+
   switch (stateData.type) {
     case "MESSAGE":
       return executeMessageState(conversationId, stateData, board.id)
 
     case "WAIT":
+      flowLog("executor_skip", `convId=${conversationId} reason=wait_state`)
       return { skipped: true, reason: "wait_state" }
 
     case "TEMPLATE":
@@ -82,12 +91,15 @@ export async function executeStateForConversation(
         userMessage,
       )
       if (conditional.matched && conditional.targetStateId) {
+        flowLog("executor_condition_matched", `convId=${conversationId} targetState=${conditional.targetStateId}`)
         await transitionState(conversationId, conditional.targetStateId)
         return { advanced: true, newStateId: conditional.targetStateId }
       }
       if (conditional.matchImpossible) {
+        flowLog("executor_condition_match_impossible", `convId=${conversationId}`)
         return { skipped: true, reason: "condition_not_met" }
       }
+      flowLog("executor_condition_fallback_ai", `convId=${conversationId}`)
       return executeAIState(conversationId, conversation, stateData, board.id, userMessage)
     }
 
@@ -244,7 +256,11 @@ async function executeAIState(
 ): Promise<ExecutionResult> {
   const userMessage = overrideUserMessage ?? ""
 
+  flowLog("execute_ai_state", `convId=${conversationId} stateName="${state.name}" stateId=${state.id} nextStateId=${state.nextStateId ?? "none"} hasAgentGoal=${!!state.agentGoal}`)
+
   const result = await executeSubAgentRun({ conversationId, boardId, userMessage })
+
+  flowLog("ai_result", `convId=${conversationId} action=${result.action} hasResponse=${!!result.responseText} responseLen=${result.responseText?.length ?? 0} outcome=${result.outcome} transitioned=${result.targetStateId ?? "none"} handoff=${result.handoffProposed} confidence=${result.agentConfidence}`)
 
   if (state.escalateOnNoReply && result.responseText) {
     const delayMs = state.escalateOnNoReply * 60 * 60 * 1000
@@ -258,73 +274,71 @@ async function executeAIState(
   }
 
   if (result.action === "transition" && result.targetStateId) {
-    console.log(`[Executor] AI transition → ${result.targetStateId}`)
+    flowLog("ai_action_transition", `convId=${conversationId} targetState=${result.targetStateId}`)
     return { sent: !!result.responseText, advanced: true, newStateId: result.targetStateId }
   }
 
   if (result.action === "escalate") {
-    console.log(`[Executor] Escalated for conversation ${conversationId}`)
+    flowLog("ai_action_escalate", `convId=${conversationId}`)
     return { sent: false, reason: "escalated" }
   }
 
   // ── Auto Mission Evaluation ──────────────────────────────────────────────
-  // Parse the [MISSION_COMPLETED] / [MISSION_IN_PROGRESS] marker from the AI's
-  // response instead of making a second LLM call. Falls back to LLM evaluator
-  // only when the marker is missing (rare edge case).
+  flowLog("mission_check", `convId=${conversationId} hasGoal=${!!state.agentGoal} hasNextState=${!!state.nextStateId} action=${result.action} hasResponse=${!!result.responseText} rawMarker=${result.rawMissionCompleted}`)
   if (
     state.agentGoal &&
     state.nextStateId &&
     result.action === "respond" &&
     result.responseText
   ) {
-    const markerMatch = result.responseText.match(MISSION_MARKER_RE)
-    const isCompleted = markerMatch?.[1]?.toUpperCase() === "COMPLETED"
-
-    if (isCompleted) {
-      console.log(`[Executor] Mission marker COMPLETED → auto-transition to ${state.nextStateId}`)
+    // Check the pre-sanitized marker from the raw LLM output
+    if (result.rawMissionCompleted) {
+      flowLog("mission_marker_completed", `convId=${conversationId} transitioning to ${state.nextStateId}`)
       await transitionState(conversationId, state.nextStateId, "ai_advance")
       return { sent: true, advanced: true, newStateId: state.nextStateId }
     }
 
     // No marker found → fall back to LLM evaluator (async, non-blocking)
-    if (!markerMatch) {
-      const language = conversation.board?.brain?.language ?? "de"
-      const leadData = (conversation.lead?.customData as Record<string, unknown>) ?? {}
-      const summary = conversation.conversationSummary ?? null
-      const goal = state.agentGoal
-      const sName = state.name
-      const nxtStateId = state.nextStateId
-      const convId = conversationId
+    flowLog("mission_fallback_start", `convId=${conversationId} goal="${(state.agentGoal ?? "").slice(0, 60)}"`)
+    const language = conversation.board?.brain?.language ?? "de"
+    const leadData = (conversation.lead?.customData as Record<string, unknown>) ?? {}
+    const summary = conversation.conversationSummary ?? null
+    const goal = state.agentGoal
+    const sName = state.name
+    const nxtStateId = state.nextStateId
+    const convId = conversationId
 
-      prisma.message.findMany({
-        where: { conversationId: convId },
-        orderBy: { timestamp: "desc" },
-        take: 8,
-        select: { direction: true, content: true },
-      }).then((recentMessages) => {
-        recentMessages.reverse()
-        return evaluateMissionCompletion({
-          agentGoal: goal,
-          stateName: sName,
-          recentMessages,
-          leadData,
-          conversationSummary: summary,
-          language,
-          boardId,
-        })
-      }).then((evalResult) => {
-        if (evalResult.completed && evalResult.confidence >= 0.5) {
-          console.log(`[Executor] LLM fallback: mission completed → transition`)
-          transitionState(convId, nxtStateId!, "ai_advance").catch((e: unknown) =>
-            console.error("[Executor] Fallback transition failed:", e),
-          )
-        }
-      }).catch((e: unknown) =>
-        console.error("[Executor] Fallback mission eval failed:", e),
-      )
-    }
+    prisma.message.findMany({
+      where: { conversationId: convId },
+      orderBy: { timestamp: "desc" },
+      take: 8,
+      select: { direction: true, content: true },
+    }).then((recentMessages) => {
+      recentMessages.reverse()
+      flowLog("mission_fallback_eval", `convId=${convId} msgCount=${recentMessages.length}`)
+      return evaluateMissionCompletion({
+        agentGoal: goal,
+        stateName: sName,
+        recentMessages,
+        leadData,
+        conversationSummary: summary,
+        language,
+        boardId,
+      })
+    }).then((evalResult) => {
+      flowLog("mission_fallback_result", `convId=${convId} completed=${evalResult.completed} confidence=${evalResult.confidence} reason="${evalResult.reason}"`)
+      if (evalResult.completed && evalResult.confidence >= 0.5) {
+        flowLog("mission_fallback_transition", `convId=${convId} transitioning to ${nxtStateId}`)
+        transitionState(convId, nxtStateId!, "ai_advance").catch((e: unknown) =>
+          console.error("[Executor] Fallback transition failed:", e),
+        )
+      }
+    }).catch((e: unknown) =>
+      console.error("[Executor] Fallback mission eval failed:", e),
+    )
   }
 
+  flowLog("executor_return", `convId=${conversationId} sent=${!!result.responseText}`)
   return { sent: !!result.responseText }
 }
 

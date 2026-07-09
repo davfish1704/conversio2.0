@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/db"
 
+function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
+  const extra = data ? ` ${JSON.stringify(data)}` : ""
+  console.log(`[FLOW:${step}] ${msg}${extra}`)
+}
+
 export type JobType = "process_message" | "escalation_check" | "summarize_conversation" | "supervisor_execute"
 
 export interface JobPayload {
@@ -66,10 +71,11 @@ async function enqueueMessageDebounced(params: {
   const { conversationId } = params.payload
   const scheduledFor = new Date(Date.now() + DEBOUNCE_MS)
 
+  flowLog("debounce_start", `convId=${conversationId} scheduledFor=${scheduledFor.toISOString()} debounceMs=${DEBOUNCE_MS}`)
+
   return prisma.$transaction(async (tx) => {
     // Cancel existing PENDING jobs for this conversation.
-    // The status = 'PENDING' guard in WHERE ensures RUNNING jobs are untouched.
-    await tx.job.updateMany({
+    const { count } = await tx.job.updateMany({
       where: {
         type: "process_message",
         status: "PENDING",
@@ -78,7 +84,9 @@ async function enqueueMessageDebounced(params: {
       data: { status: "CANCELLED" },
     })
 
-    return tx.job.create({
+    flowLog("debounce_cancelled", `convId=${conversationId} cancelledCount=${count}`)
+
+    const job = await tx.job.create({
       data: {
         type: params.type,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,5 +97,9 @@ async function enqueueMessageDebounced(params: {
         maxAttempts: params.maxAttempts ?? 3,
       },
     })
+
+    flowLog("debounce_created", `convId=${conversationId} jobId=${job.id} scheduledFor=${scheduledFor.toISOString()}`)
+
+    return job
   })
 }
