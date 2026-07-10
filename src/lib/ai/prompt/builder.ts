@@ -182,6 +182,12 @@ export function sanitizeAIOutput(text: string): string {
   cleaned = cleaned.replace(/\[Send\s+(Asset|Document|File|Photo|Image|Video|Audio|PDF):[^\]]*\]\s*/gi, "")
   cleaned = cleaned.replace(/\[Tool:\s*[^\]]*\]\s*/gi, "")
 
+  // Strip internal narration patterns that leak into customer-facing text
+  // e.g. "[Searching assets...]", "[Looking up...]", "[Processing...]"
+  cleaned = cleaned.replace(/\[\w+ing[^\]]*\]\s*/gi, "")
+  // Also strip standalone bracketed status like "[Searching...]", "[Loading...]"
+  cleaned = cleaned.replace(/\[\w+\.{2,}\]\s*/gi, "")
+
   cleaned = cleaned
     .replace(/\n{3,}/g, "\n\n")
     .trim()

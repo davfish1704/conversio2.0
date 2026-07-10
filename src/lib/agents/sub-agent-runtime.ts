@@ -553,7 +553,23 @@ export async function executeSubAgentRun(
 
   let cleanedText = finalContent ? sanitizeAIOutput(finalContent) : null
 
-  // ── Step 8b: Guard against "I've sent" claims without actual tool call ──
+  // ── Step 8b: Guard against fabricated financial figures ────────────────
+  // If the AI generates specific prices, dollar amounts, or ROI percentages
+  // that are NOT sourced from tool results, it's hallucinating. Detect the
+  // contradiction pattern: "I don't have X" immediately followed by "X is Y".
+  if (cleanedText) {
+    const hasDontHave = /(don'?t have|no[nt].*available|lack|not.*loaded|not.*found)/i.test(cleanedText)
+    const hasFigures = /\$\s*[\d,]+(?:\.\d+)?\s*(USD|EUR|k|K)?|[\d,.%]+\s*%(\s*(net|gross|annually|per year|p\.a\.))?/i.test(cleanedText)
+    const isSelfContradicting = hasDontHave && hasFigures
+    if (isSelfContradicting) {
+      console.warn(`[AgentRuntime] HALLUCINATION GUARD: AI says it lacks data then provides numbers — rewriting (convId=${conversationId})`)
+      flowLog("agent_hallucination_guard", `convId=${conversationId} contradictory text: "${cleanedText.slice(0, 100)}..."`)
+      cleanedText = `I apologize, but I don't have the specific pricing or ROI figures available in my current data. A member of our team can provide you with the exact details. Would you like me to connect you with someone?`
+      outcome = "SUCCESS_CONTINUE"
+    }
+  }
+
+  // ── Step 8c: Guard against "I've sent" claims without actual tool call ──
   // If the AI text claims to have sent documents/assets but never called
   // send_asset, override the response with an honest fallback.
   // This is a safety net — the prompt rules should prevent this, but if
@@ -565,8 +581,6 @@ export async function executeSubAgentRun(
     if (makesClaim && !sentAsset) {
       console.warn(`[AgentRuntime] FAKE SEND GUARD: AI claims sent without tool call — rewriting response (convId=${conversationId})`)
       flowLog("agent_fake_send_guard", `convId=${conversationId} rewriting: "${cleanedText.slice(0, 80)}..."`)
-      // Replace the lying response with an honest one
-      // (the original is preserved in agentRun.agentResponse for debugging)
       cleanedText = `I don't currently have digital documents available to send directly in this chat. Let me connect you with a team member who can provide the detailed information you need.`
       outcome = "SUCCESS_CONTINUE"
     }

@@ -273,7 +273,8 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
         : "Sag NIEMALS, dass du etwas schickst (Preisliste, Broschüre, Dokument, Foto), ohne im selben Durchlauf tatsächlich das Tool \`send_asset\` aufzurufen. Wenn kein passendes Asset existiert, sag ehrlich, dass du es nicht hast."
       }\n` +
     `3. ${isEnglish ? "CONCISE ANSWERS" : "PRÄZISE ANTWORTEN"}: ` +
-      `${isEnglish ? "Max 3-4 sentences. At most ONE question per response." : "Maximal 3-4 Sätze. Höchstens EINE Frage pro Antwort."}\n` +
+      `${isEnglish ? "Max 3-4 sentences. At most ONE question per response." : "Maximal 3-4 Sätze. Höchstens EINE Frage pro Antwort."} ` +
+      `${isEnglish ? "Write in PLAIN TEXT only — do NOT use Markdown (**bold**, _italic_, # headings)." : "Schreibe im KLARTEXT — verwende KEINE Markdown-Formatierung (**fett**, _kursiv_, # Überschriften)."}\n` +
     `4. ${isEnglish ? "DO NOT INVENT FACTS" : "KEINE FAKTEN ERFINDEN"}: ` +
       `${isEnglish ? "If you lack information on a topic, say so honestly. Never make up prices, data, or promises." : "Wenn du zu einem Thema keine Informationen im Kontext hast, erfinde keine Preise, Daten oder Versprechungen."}\n` +
     `5. ${isEnglish ? "SEND ASSETS PROACTIVELY" : "ASSETS AKTIV VERSENDEN"}: ` +
