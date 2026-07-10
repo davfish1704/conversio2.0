@@ -551,7 +551,26 @@ export async function executeSubAgentRun(
     flowLog("agent_raw_marker", `convId=${conversationId} marker=MISSION_COMPLETED (pre-sanitize)`)
   }
 
-  const cleanedText = finalContent ? sanitizeAIOutput(finalContent) : null
+  let cleanedText = finalContent ? sanitizeAIOutput(finalContent) : null
+
+  // ── Step 8b: Guard against "I've sent" claims without actual tool call ──
+  // If the AI text claims to have sent documents/assets but never called
+  // send_asset, override the response with an honest fallback.
+  // This is a safety net — the prompt rules should prevent this, but if
+  // they fail, this guard protects the user from invisible lies.
+  if (cleanedText) {
+    const sentAsset = allToolCallsMade.some((t) => t.name === "send_asset")
+    const sendClaimPattern = /(I'?ve\s+(sent|shared|attached)|sending\s+(you|over)|here is the|here are the|I have (sent|shared|attached)|I will send|Let me send).{0,40}(brochure|document|file|price list|pricelist|pdf|report|summary|contract|form|image|photo|picture|video)/i
+    const makesClaim = sendClaimPattern.test(cleanedText)
+    if (makesClaim && !sentAsset) {
+      console.warn(`[AgentRuntime] FAKE SEND GUARD: AI claims sent without tool call — rewriting response (convId=${conversationId})`)
+      flowLog("agent_fake_send_guard", `convId=${conversationId} rewriting: "${cleanedText.slice(0, 80)}..."`)
+      // Replace the lying response with an honest one
+      // (the original is preserved in agentRun.agentResponse for debugging)
+      cleanedText = `I don't currently have digital documents available to send directly in this chat. Let me connect you with a team member who can provide the detailed information you need.`
+      outcome = "SUCCESS_CONTINUE"
+    }
+  }
 
   // ── Step 9: Evaluate Handoff via Handoff Engine ───────────────────────────
 

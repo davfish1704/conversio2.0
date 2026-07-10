@@ -32,7 +32,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Ungültiger R2-Pfad" }, { status: 400 })
   }
 
-  const publicUrl = `${process.env.R2_PUBLIC_URL}/${r2Key}`
+  const r2PublicUrl = process.env.R2_PUBLIC_URL
+  if (!r2PublicUrl) {
+    return NextResponse.json({ error: "R2_PUBLIC_URL ist nicht konfiguriert — Asset kann nicht gespeichert werden" }, { status: 500 })
+  }
+  const publicUrl = `${r2PublicUrl}/${r2Key}`
 
   try {
     const asset = await prisma.asset.create({
