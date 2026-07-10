@@ -122,7 +122,9 @@ export default function BoardSettingsPage() {
         }
         if (data.providers) setProviderModels(data.providers)
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn(`[Settings] ai-config GET fehlgeschlagen für board ${id}:`, err)
+      })
 
     fetch(`/api/boards/${id}/custom-fields`)
       .then(r => r.json())
