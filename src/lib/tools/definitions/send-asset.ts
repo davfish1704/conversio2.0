@@ -6,19 +6,25 @@ import type { Conversation, Board, State } from "@prisma/client"
 export const sendAssetTool: Tool = {
   name: "send_asset",
   description:
-    "Sendet ein Asset (Bild, PDF, Audio, Video) als Mediannachricht an den Kunden. " +
-    "Verwende search_assets um gültige Asset-IDs zu finden. " +
-    "Das Asset wird direkt über den Kanal des Kunden (WhatsApp/Telegram) als Mediendatei zugestellt.",
+    "Sendet ein Asset (Bild, PDF, Audio, Video, Dokument) als Mediendatei an den Kunden. " +
+    "Rufe search_assets IMMER VOR send_asset auf, um gültige Asset-IDs zu erhalten. " +
+    "Nutze dieses Tool SOFORT in folgenden Situationen:\n" +
+    "- Der Kunde fragt nach Preisen, Kosten, Finanzierung → suche nach Preisliste/Kostenaufstellung\n" +
+    "- Der Kunde fragt nach Fotos, Bildern, Grundrissen, Lageplänen → suche nach Bildern/Grundrissen\n" +
+    "- Der Kunde fragt nach Broschüren, Prospekten, Flyern, Katalogen → suche nach dem passenden Dokument\n" +
+    "- Der Kunde fragt nach Verträgen, Formularen, Anträgen → suche nach Vertrag/Formular\n" +
+    "- Der Kunde zeigt Interesse an einer bestimmten Immobilie → suche nach dem Objektnamen\n" +
+    "GIBS NICHT nur die URL zurück — das Asset muss via dieses Tools versendet werden.",
   parameters: {
     type: "object",
     properties: {
       assetId: {
         type: "string",
-        description: "Die ID des Assets (aus search_assets)",
+        description: "Die ID des Assets (vorher via search_assets ermittelt)",
       },
       caption: {
         type: "string",
-        description: "Optionaler Begleittext zur Mediendatei",
+        description: "Begleittext für den Kunden. Erklärt kurz, was er bekommt (z.B. 'Hier ist die Preisliste für unsere Objekte in Canggu.')",
       },
     },
     required: ["assetId"],

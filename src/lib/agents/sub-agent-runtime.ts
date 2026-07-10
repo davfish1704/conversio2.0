@@ -37,7 +37,23 @@ const ASSET_TRIGGER_KEYWORDS = [
   "brochure", "document", "floor plan", "price list", "presentation",
   "contract", "form", "image", "photo", "picture", "kostenaufstellung",
   "werte", "datenblatt", "spezifikation", "produktinfo",
+  // General interest triggers — the lead is asking about something specific
+  "info", "information", "infos", "daten", "details", "detail",
+  "preis", "kosten", "miete", "kauf", "angebot", "offer",
+  "finn's", "canggu", "bali", "immobilie", "objekt", "wohnung", "haus",
+  "show", "sehen", "zeigen", "schicken", "senden", "erhalten",
+  "available", "verfügbar", "möglichkeit", "option",
 ]
+
+// Simple greeting patterns — don't trigger asset search
+const GREETING_PATTERNS = [
+  /^(hi|hey|hello|hallo|moin|servus|grüß|guten tag|guten morgen|guten abend)\b/i,
+  /^(start|\/start)/,
+  /^(\+\+?\s*)+$/,
+]
+
+// Minimum message length to trigger generic asset search (avoid false positives on greetings)
+const MIN_ASSET_SEARCH_LENGTH = 25
 const MAX_TOOL_ITERATIONS = 5
 
 export interface SubAgentRunInput {
@@ -137,17 +153,35 @@ export async function executeSubAgentRun(
   // ── Step 3b: Automatic Asset Pre-Retrieval ─────────────────────────────────
   // Scan the user message for asset-related keywords BEFORE building the prompt.
   // If a match is found, query the board's assets and inject them into context.
+  // Also does a fallback search for substantive messages that didn't match keywords.
   const lowerMsg = userMessage.toLowerCase()
   const wantsAsset = ASSET_TRIGGER_KEYWORDS.some((kw) => lowerMsg.includes(kw))
+  const isGreeting = GREETING_PATTERNS.some((p) => p.test(userMessage))
+  const isLongEnough = userMessage.length >= MIN_ASSET_SEARCH_LENGTH && userMessage.split(" ").length > 3
 
   let retrievedAssets: { id: string; name: string; type: string; publicUrl: string; description: string | null }[] = []
 
-  if (wantsAsset) {
-    console.log(`[AgentRuntime] Asset-Trigger erkannt in: "${userMessage.slice(0, 80)}"`)
+  const shouldSearch = wantsAsset || (isLongEnough && !isGreeting)
+
+  if (shouldSearch) {
+    console.log(`[AgentRuntime] Asset-Suche: trigger=${wantsAsset} longEnough=${isLongEnough} greeting=${isGreeting} msg="${userMessage.slice(0, 60)}"`)
     try {
-      const searchTerms = [userMessage.slice(0, 60)]
-      if (userMessage.split(" ").length > 1) {
-        searchTerms.push(...userMessage.split(" ").slice(0, 5))
+      const searchTerms: string[] = []
+
+      if (wantsAsset) {
+        searchTerms.push(userMessage.slice(0, 60))
+        if (userMessage.split(" ").length > 1) {
+          searchTerms.push(...userMessage.split(" ").slice(0, 5))
+        }
+      } else {
+        // Fallback: use meaningful words from the message (skip very short words)
+        const words = userMessage
+          .toLowerCase()
+          .replace(/[^a-zäöüß\s]/g, "")
+          .split(/\s+/)
+          .filter((w) => w.length > 3)
+          .slice(0, 4)
+        searchTerms.push(...words)
       }
 
       const orConditions: Array<{ name?: { contains: string; mode: "insensitive" }; description?: { contains: string; mode: "insensitive" } }> = []
@@ -157,14 +191,19 @@ export async function executeSubAgentRun(
         orConditions.push({ description: { contains: term, mode: "insensitive" } })
       }
 
-      retrievedAssets = await prisma.asset.findMany({
-        where: { boardId, OR: orConditions },
-        select: { id: true, name: true, type: true, publicUrl: true, description: true },
-        take: 5,
-      })
-      console.log(`[AgentRuntime] Auto-Assets gefunden: ${retrievedAssets.length}`)
-      for (const a of retrievedAssets) {
-        console.log(`  → ${a.name} (${a.type}) ${a.publicUrl}`)
+      if (orConditions.length > 0) {
+        retrievedAssets = await prisma.asset.findMany({
+          where: { boardId, OR: orConditions },
+          select: { id: true, name: true, type: true, publicUrl: true, description: true },
+          take: 5,
+        })
+      }
+
+      if (retrievedAssets.length > 0) {
+        console.log(`[AgentRuntime] Auto-Assets gefunden: ${retrievedAssets.length}`)
+        for (const a of retrievedAssets) {
+          console.log(`  → ${a.name} (${a.type}) ${a.publicUrl}`)
+        }
       }
     } catch (assetErr) {
       console.error("[AgentRuntime] Asset pre-retrieval fehlgeschlagen:", assetErr)
@@ -235,7 +274,18 @@ export async function executeSubAgentRun(
   const messages: AIMessage[] = [{ role: "system", content: systemPrompt }]
 
   const recentHistory = historyRows.slice(-20)
+  // Deduplicate: the last INBOUND in history is the same as userMessage (from job payload)
+  // Skip it in history to avoid confusing the model with duplicate input
+  let skippedHistory = false
   for (const msg of recentHistory) {
+    if (
+      !skippedHistory &&
+      msg.direction === "INBOUND" &&
+      msg.content === userMessage
+    ) {
+      skippedHistory = true
+      continue
+    }
     messages.push({
       role:    msg.direction === "OUTBOUND" ? "assistant" : "user",
       content: msg.content,

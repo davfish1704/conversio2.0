@@ -64,7 +64,12 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
 
   // ── Section 2: Agent Goal ──────────────────────────────────────────────────
   if (input.agentGoal) {
-    parts.push(`## Dein Ziel in diesem State\n${input.agentGoal}`)
+    parts.push(
+      `## Dein Ziel in diesem State\n${input.agentGoal}\n\n` +
+      `WICHTIG: Wenn der Lead bereits in seiner Nachricht oder im bisherigen Gesprächsverlauf gesagt hat, ` +
+      `warum er kontaktiert oder wonach er fragt, dann ist dieses Ziel bereits erfüllt. ` +
+      `Wiederhole dann NICHT die Begrüßung oder die Einstiegsfrage — gehe direkt auf sein Anliegen ein.`
+    )
   }
 
   // ── Section 3: Detailed Instructions ──────────────────────────────────────
@@ -116,6 +121,31 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
     )
     parts.push(`## Gefundene Assets\nDer Lead hat nach Dokumenten oder Medien gefragt. Folgende Assets wurden in der Bibliothek gefunden:\n\n${lines.join("\n\n")}\n\nVerwende \`send_asset\` mit der entsprechenden assetId um das Asset zu versenden. Erwähne das Asset natürlich in deiner Antwort. Versprich NIE ein Dokument das bereits existiert — sende es sofort.`)
   }
+
+  // ── Section 5c: Guardrails & Verhaltensregeln ─────────────────────────────
+  parts.push(
+    `## Verhaltensregeln\n` +
+    `- Wenn der Lead bereits eine konkrete Frage gestellt hat (z.B. nach Preisen, Verfügbarkeit, Infos zu einem Ort), ` +
+      `beantworte sie SOFORT inhaltlich. Wiederhole NICHT die Standard-Begrüßung wie "Willkommen!" oder "Was führt Sie zu uns?".\n` +
+    `- Wenn du zu einem Thema keine Informationen im Kontext hast, sage das ehrlich und biete an, ` +
+      `den Lead mit einem Mitarbeiter zu verbinden. Erfinde KEINE Fakten, Preise oder Versprechungen.\n` +
+    `- Verwende im gesamten Gespräch NUR EINMAL eine Begrüßung. Wiederhole sie nicht bei jeder Nachricht.\n` +
+    `- Antworte präzise und kurz (max. 3-4 Sätze). Stelle maximal EINE Frage pro Antwort.\n` +
+    `- Wenn der Lead Interesse an einem bestimmten Produkt, einer Immobilie oder einem Dokument zeigt, ` +
+      `suche SOFORT in der Asset-Bibliothek (via search_assets) und biete das passende Asset an.`
+  )
+
+  // ── Section 5d: Proaktiver Asset-Versand ─────────────────────────────────
+  parts.push(
+    `## Asset-Versand (wichtig)\n` +
+    `Deine Board-Asset-Bibliothek enthält Dokumente, Bilder und Broschüren, die du direkt an den Lead senden kannst.\n` +
+    `- Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos, Finanzierungsplänen oder ähnlichen Unterlagen fragt, ` +
+      `rufe SOFORT search_assets mit dem passenden Suchbegriff auf.\n` +
+    `- search_assets liefert dir eine Liste mit Asset-IDs, Titeln und Beschreibungen zurück.\n` +
+    `- Sende dann das passende Asset mit send_asset(assetId, caption). Erkläre im caption-Text kurz, ` +
+      `was der Lead gerade bekommt.\n` +
+    `- Warte NICHT auf eine zweite Aufforderung — wenn ein relevantes Asset existiert, schicke es sofort.`
+  )
 
   // ── Section 6: Memory & Collected Data ────────────────────────────────────
   if (input.conversationSummary) {
