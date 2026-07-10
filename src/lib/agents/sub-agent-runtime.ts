@@ -429,6 +429,40 @@ export async function executeSubAgentRun(
     }
   }
 
+  // ── Step 7c: LLM Error Recovery ─────────────────────────────────────────
+  // When the primary AI call fails (LLM_ERROR), try a final recovery attempt
+  // with minimal context and no tools. This catches transient provider errors,
+  // model-specific function calling bugs, and key misconfigurations.
+  if (!finalContent && outcome === "LLM_ERROR") {
+    console.log("[AgentRuntime] LLM error — attempting recovery with minimal prompt")
+    try {
+      const recovery = await aiRegistry.execute({
+        boardId,
+        purpose: "main",
+        messages: [
+          messages[0],
+          { role: "user", content: userMessage || "Continue the conversation." },
+        ],
+        tools: undefined,
+        temperature: brain.temperature ?? 0.7,
+        maxTokens: brain.maxTokens ?? 512,
+      })
+      if (recovery.content?.trim()) {
+        finalContent = recovery.content
+        usedStrategy = "forced"
+        usedModel = recovery.model ?? usedModel
+        usedProvider = recovery.provider ?? usedProvider
+        totalInputTokens += recovery.usage?.inputTokens ?? 0
+        totalOutputTokens += recovery.usage?.outputTokens ?? 0
+        totalCostCents += (recovery.providerCost ?? 0) * 100
+        outcome = "SUCCESS_CONTINUE"
+        errorMessage = undefined
+      }
+    } catch (recoveryErr) {
+      console.error("[AgentRuntime] LLM recovery failed:", recoveryErr)
+    }
+  }
+
   // ── Step 8: Sanitize Output (check marker BEFORE stripping) ──────────────
 
   const rawMissionCompleted = finalContent ? /\[MISSION_COMPLETED\]/i.test(finalContent) : false
