@@ -62,13 +62,23 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
     parts.push(input.brain.systemPrompt)
   }
 
-  // ── Section 2: Agent Goal ──────────────────────────────────────────────────
+  // ── Section 2: Agent Goal (conditional) ──────────────────────────────────
   if (input.agentGoal) {
+    // If memory already contains extracted intent/interests, inject it prominently
+    const knownInterest = input.memories.find(
+      (m) => m.key === "lastIntent" || m.key === "interest" || m.key === "property_interest"
+    )
+    const knownInfo = knownInterest
+      ? `\n\n⚠️ BEREITS BEKANNT: ${knownInterest.key} = "${knownInterest.value}". Das Ziel gilt als erfüllt — beantworte die Anfrage DIREKT, ohne nach dem Grund zu fragen.`
+      : ""
+
     parts.push(
-      `## Dein Ziel in diesem State\n${input.agentGoal}\n\n` +
-      `WICHTIG: Wenn der Lead bereits in seiner Nachricht oder im bisherigen Gesprächsverlauf gesagt hat, ` +
-      `warum er kontaktiert oder wonach er fragt, dann ist dieses Ziel bereits erfüllt. ` +
-      `Wiederhole dann NICHT die Begrüßung oder die Einstiegsfrage — gehe direkt auf sein Anliegen ein.`
+      `## Dein Ziel in diesem State\n${input.agentGoal}\n` +
+      `WICHTIG: Dieses Ziel gilt NUR, solange der Lead sein Anliegen noch NICHT genannt hat. ` +
+      `Falls der Lead bereits gesagt hat, warum er kontaktiert oder wonach er fragt ` +
+      `(z.B. ein Produktname, eine Immobilie, eine Frage zu Preisen/Dokumenten), ` +
+      `dann ist das Ziel BEREITS ERFÜLLT. Wiederhole NICHT die Begrüßung oder die ` +
+      `Einstiegsfrage — gehe SOFORT zur inhaltlichen Antwort über.${knownInfo}`
     )
   }
 
@@ -122,31 +132,6 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
     parts.push(`## Gefundene Assets\nDer Lead hat nach Dokumenten oder Medien gefragt. Folgende Assets wurden in der Bibliothek gefunden:\n\n${lines.join("\n\n")}\n\nVerwende \`send_asset\` mit der entsprechenden assetId um das Asset zu versenden. Erwähne das Asset natürlich in deiner Antwort. Versprich NIE ein Dokument das bereits existiert — sende es sofort.`)
   }
 
-  // ── Section 5c: Guardrails & Verhaltensregeln ─────────────────────────────
-  parts.push(
-    `## Verhaltensregeln\n` +
-    `- Wenn der Lead bereits eine konkrete Frage gestellt hat (z.B. nach Preisen, Verfügbarkeit, Infos zu einem Ort), ` +
-      `beantworte sie SOFORT inhaltlich. Wiederhole NICHT die Standard-Begrüßung wie "Willkommen!" oder "Was führt Sie zu uns?".\n` +
-    `- Wenn du zu einem Thema keine Informationen im Kontext hast, sage das ehrlich und biete an, ` +
-      `den Lead mit einem Mitarbeiter zu verbinden. Erfinde KEINE Fakten, Preise oder Versprechungen.\n` +
-    `- Verwende im gesamten Gespräch NUR EINMAL eine Begrüßung. Wiederhole sie nicht bei jeder Nachricht.\n` +
-    `- Antworte präzise und kurz (max. 3-4 Sätze). Stelle maximal EINE Frage pro Antwort.\n` +
-    `- Wenn der Lead Interesse an einem bestimmten Produkt, einer Immobilie oder einem Dokument zeigt, ` +
-      `suche SOFORT in der Asset-Bibliothek (via search_assets) und biete das passende Asset an.`
-  )
-
-  // ── Section 5d: Proaktiver Asset-Versand ─────────────────────────────────
-  parts.push(
-    `## Asset-Versand (wichtig)\n` +
-    `Deine Board-Asset-Bibliothek enthält Dokumente, Bilder und Broschüren, die du direkt an den Lead senden kannst.\n` +
-    `- Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos, Finanzierungsplänen oder ähnlichen Unterlagen fragt, ` +
-      `rufe SOFORT search_assets mit dem passenden Suchbegriff auf.\n` +
-    `- search_assets liefert dir eine Liste mit Asset-IDs, Titeln und Beschreibungen zurück.\n` +
-    `- Sende dann das passende Asset mit send_asset(assetId, caption). Erkläre im caption-Text kurz, ` +
-      `was der Lead gerade bekommt.\n` +
-    `- Warte NICHT auf eine zweite Aufforderung — wenn ein relevantes Asset existiert, schicke es sofort.`
-  )
-
   // ── Section 6: Memory & Collected Data ────────────────────────────────────
   if (input.conversationSummary) {
     parts.push(`## Gesprächszusammenfassung\n${input.conversationSummary}`)
@@ -155,6 +140,19 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
   if (input.memories.length > 0) {
     const lines = input.memories.map((m) => `${m.key}: ${m.value}`)
     parts.push(`## Bekannte Informationen\n${lines.join("\n")}`)
+
+    // Check if memory contains extracted intent about what the lead wants
+    const interestKeys = ["lastIntent", "interest", "property_interest", "destination", "budget", "timeline"]
+    const knownInterests = input.memories.filter((m) => interestKeys.includes(m.key))
+    if (knownInterests.length > 0) {
+      const interestLines = knownInterests.map((m) => `  → ${m.key}: "${m.value}"`).join("\n")
+      parts.push(
+        `## BEREITS BEKANNT — Aus vorherigem Gesprächsverlauf\n` +
+        `Folgende Informationen wurden bereits vom Lead genannt oder aus der Konversation extrahiert:\n${interestLines}\n\n` +
+        `Diese Informationen gelten als BESTÄTIGT. Du musst nicht erneut nach ihnen fragen. ` +
+        `Nutze sie, um deine Antwort direkt darauf aufzubauen.`
+      )
+    }
   }
 
   const customKeys = Object.keys(input.customData)
@@ -248,6 +246,30 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
       `## Handoff\nWenn du überzeugt bist, dass deine Aufgabe in diesem State vollständig erledigt ist, rufe das Tool \`handoff_proposed\` auf. Rufe es NICHT auf, wenn du noch auf eine Antwort des Leads wartest oder wenn die Konversation noch läuft.`,
     )
   }
+
+  // ── CRITICAL: Final Behavioral Rules ─────────────────────────────────────
+  // These rules are placed at the END of the prompt (right before conversation
+  // history) to maximize recency effect — LLMs follow the last instructions
+  // most strongly before generating their response.
+  parts.push(
+    `## WICHTIG — Diese Regeln haben höchste Priorität\n` +
+    `1. LEAD-FRAGE BEANTWORTEN: Wenn der Lead bereits eine konkrete Frage gestellt hat ` +
+      `(nach Preisen, Verfügbarkeit, Infos zu einem Ort, einem Produkt, einem Dokument), ` +
+      `beantworte sie SOFORT inhaltlich. Wiederhole NICHT die Begrüßung ` +
+      `("Willkommen!", "Was führt Sie zu uns?") — der Lead hat sein Anliegen bereits genannt.\n` +
+    `2. KEINE LEEREN VERSPRECHEN: Sag NIEMALS, dass du etwas schickst, sendest oder zusendest ` +
+      `(Preisliste, Broschüre, Dokument, Foto, Grundriss), ohne im selben Durchlauf ` +
+      `tatsächlich das Tool \`send_asset\` aufzurufen. Wenn du kein passendes Asset ` +
+      `findest oder senden kannst, sag stattdessen ehrlich, dass du es nicht hast, ` +
+      `und biete an, einen Mitarbeiter zu verbinden.\n` +
+    `3. PRÄZISE ANTWORTEN: Maximal 3-4 Sätze. Höchstens EINE Frage pro Antwort.\n` +
+    `4. KEINE FAKTEN ERFINDEN: Wenn du zu einem Thema keine Informationen im Kontext hast, ` +
+      `erfinde keine Preise, Daten oder Versprechungen. Biete stattdessen an, ` +
+      `den Lead mit einem Mitarbeiter zu verbinden.\n` +
+    `5. ASSETS AKTIV VERSENDEN: Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos, ` +
+      `Finanzierungsplänen oder ähnlichen Unterlagen fragt, rufe SOFORT \`search_assets\` auf, ` +
+      `dann \`send_asset\` mit dem gefundenen Asset. Warte NICHT auf eine zweite Aufforderung.`
+  )
 
   // ── Mission Completion Marker ────────────────────────────────────────────
   // Embed the evaluation directly in the main LLM response so no second call

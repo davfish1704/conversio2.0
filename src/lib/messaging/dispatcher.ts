@@ -177,7 +177,11 @@ export async function sendMediaMessage(
       body:    JSON.stringify(body),
     })
     const data = await res.json()
-    if (!data.ok) return { ok: false, error: data.description }
+    if (!data.ok) {
+      flowLog("dispatcher_media_error", `convId=${conversationId} method=${method} key=${key} err=${data.description} url=${media.url?.slice(0, 80)}`)
+      return { ok: false, error: data.description }
+    }
+    flowLog("dispatcher_media_sent", `convId=${conversationId} method=${method} msgId=${data.result?.message_id}`)
     return { ok: true, externalMessageId: String(data.result?.message_id) }
   }
 
