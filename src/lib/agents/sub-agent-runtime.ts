@@ -383,6 +383,27 @@ export async function executeSubAgentRun(
       })
       flowLog("agent_tool_results", `convId=${conversationId} results=${executed.map(e => `${e.toolName}:${e.result.success}`).join(",")}`)
 
+      // Track repeated tool failures — break if same tool fails or returns
+      // empty results 2x in a row (e.g. search_assets repeatedly finds nothing,
+      // wasting time and conversation context).
+      let repeatedToolFailure = false
+      if (executed.length > 0) {
+        const firstTool = executed[0]
+        const d = firstTool.result.data as Record<string, unknown> | undefined
+        const isEmptyResult =
+          !firstTool.result.success ||
+          (d?.assets !== undefined && Array.isArray(d.assets) && d.assets.length === 0)
+        if (isEmptyResult) {
+          const prevToolName = allToolCallsMade.length > 0
+            ? allToolCallsMade[allToolCallsMade.length - 1]?.name
+            : null
+          if (prevToolName === firstTool.toolName) {
+            repeatedToolFailure = true
+            flowLog("agent_repeated_tool_failure", `convId=${conversationId} tool=${firstTool.toolName}`)
+          }
+        }
+      }
+
       for (const ex of executed) {
         const execArgs = response.toolCalls.find((tc) => tc.name === ex.toolName)?.arguments
         allToolCallsMade.push({ name: ex.toolName, args: execArgs ?? {} })
@@ -404,6 +425,16 @@ export async function executeSubAgentRun(
           outcome = "ESCALATED"
           flowLog("agent_escalated", `convId=${conversationId}`)
         }
+      }
+
+      // Break loop if same tool failed repeatedly — prevents context bleed
+      if (repeatedToolFailure) {
+        flowLog("agent_break_repeated_failure", `convId=${conversationId} breaking tool loop due to repeated failure`)
+        if (latestContent) {
+          finalContent = latestContent
+          usedStrategy = "rescued"
+        }
+        break
       }
 
       // Append assistant turn + tool results to messages for next iteration

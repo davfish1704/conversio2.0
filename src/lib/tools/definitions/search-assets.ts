@@ -8,7 +8,12 @@ export const searchAssetsTool: Tool = {
     "Sucht in der Asset-Bibliothek des Boards nach Bildern, PDFs oder Dokumenten. " +
     "Verwende dieses Tool wenn der Kunde etwas sehen möchte (Fotos, Grundrisse, Verträge) " +
     "oder wenn relevante Medien das Gespräch voranbringen würden. " +
-    "Gibt Asset-URLs zurück, die du direkt an den Kunden senden kannst.",
+    "Gibt Asset-IDs und URLs zurück, die du dann mit send_asset versenden kannst.\n\n" +
+    "WICHTIG — Rufe dieses Tool NUR EINMAL pro Anfrage auf. " +
+    "Wenn keine Assets gefunden werden, informiere den Kunden ehrlich: " +
+    "'Ich habe leider kein passendes Dokument in unserer Bibliothek gefunden.' " +
+    "Rufe search_assets NICHT wiederholt mit anderen Suchbegriffen auf — " +
+    "das Ergebnis bleibt gleich und blockiert die Konversation.",
   parameters: {
     type: "object",
     properties: {

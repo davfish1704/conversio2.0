@@ -267,8 +267,13 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
       `erfinde keine Preise, Daten oder Versprechungen. Biete stattdessen an, ` +
       `den Lead mit einem Mitarbeiter zu verbinden.\n` +
     `5. ASSETS AKTIV VERSENDEN: Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos, ` +
-      `Finanzierungsplänen oder ähnlichen Unterlagen fragt, rufe SOFORT \`search_assets\` auf, ` +
-      `dann \`send_asset\` mit dem gefundenen Asset. Warte NICHT auf eine zweite Aufforderung.`
+      `Finanzierungsplänen oder ähnlichen Unterlagen fragt, rufe \`search_assets\` auf, ` +
+      `dann \`send_asset\` mit dem gefundenen Asset. Warte NICHT auf eine zweite Aufforderung.\n` +
+    `6. FALL NICHT IN BEGRÜSSUNG ZURÜCK: Wenn \`search_assets\` keine Ergebnisse liefert, ` +
+      `falle NICHT in die Standard-Begrüßung zurück. Sage stattdessen ehrlich, ` +
+      `dass du kein passendes Dokument hast, und biete an, den Lead mit einem ` +
+      `Mitarbeiter zu verbinden, der weiterhelfen kann. Der Lead wartet auf eine ` +
+      `Antwort — nicht auf eine erneute Begrüßung.`
   )
 
   // ── Mission Completion Marker ────────────────────────────────────────────
