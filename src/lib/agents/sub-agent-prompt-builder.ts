@@ -255,36 +255,32 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
   // These rules are placed at the END of the prompt (right before conversation
   // history) to maximize recency effect — LLMs follow the last instructions
   // most strongly before generating their response.
+  // Rules are in BOTH languages to prevent the model from ignoring them when
+  // the conversation switches between German and English.
+  const rulesLang = input.language ?? input.brain.language ?? "de"
+  const isEnglish = rulesLang === "en"
+
   parts.push(
-    `## WICHTIG — Diese Regeln haben höchste Priorität\n` +
-    `1. LEAD-FRAGE BEANTWORTEN: Wenn der Lead bereits eine konkrete Frage gestellt hat ` +
-      `(nach Preisen, Verfügbarkeit, Infos zu einem Ort, einem Produkt, einem Dokument), ` +
-      `beantworte sie SOFORT inhaltlich. Wiederhole NICHT die Begrüßung ` +
-      `("Willkommen!", "Was führt Sie zu uns?") — der Lead hat sein Anliegen bereits genannt.\n` +
-    `2. KEINE LEEREN VERSPRECHEN: Sag NIEMALS, dass du etwas schickst, sendest oder zusendest ` +
-      `(Preisliste, Broschüre, Dokument, Foto, Grundriss), ohne im selben Durchlauf ` +
-      `tatsächlich das Tool \`send_asset\` aufzurufen. Wenn du kein passendes Asset ` +
-      `findest oder senden kannst, sag stattdessen ehrlich, dass du es nicht hast, ` +
-      `und biete an, einen Mitarbeiter zu verbinden.\n` +
-    `3. PRÄZISE ANTWORTEN: Maximal 3-4 Sätze. Höchstens EINE Frage pro Antwort.\n` +
-    `4. KEINE FAKTEN ERFINDEN: Wenn du zu einem Thema keine Informationen im Kontext hast, ` +
-      `erfinde keine Preise, Daten oder Versprechungen. Biete stattdessen an, ` +
-      `den Lead mit einem Mitarbeiter zu verbinden.\n` +
-    `5. ASSETS AKTIV VERSENDEN: Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos, ` +
-      `Finanzierungsplänen oder ähnlichen Unterlagen fragt, rufe \`search_assets\` auf, ` +
-      `dann \`send_asset\` mit dem gefundenen Asset. Warte NICHT auf eine zweite Aufforderung.\n` +
-    `6. FALL NICHT IN BEGRÜSSUNG ZURÜCK: Wenn \`search_assets\` keine Ergebnisse liefert, ` +
-      `falle NICHT in die Standard-Begrüßung zurück. Sage stattdessen ehrlich, ` +
-      `dass du kein passendes Dokument hast, und biete an, den Lead mit einem ` +
-      `Mitarbeiter zu verbinden, der weiterhelfen kann. Der Lead wartet auf eine ` +
-      `Antwort — nicht auf eine erneute Begrüßung.\n` +
-    `7. KEINE PLATZHALTER-TEXTE: Schreibe NIEMALS Text wie "[Send Asset: ...]", ` +
-      `"[Tool: ...]" oder "[Document: ...]" in deine Antwort an den Lead. ` +
-      `Das sind keine gültigen Formate — der Lead sieht nur den Rohtext. ` +
-      `Wenn du ein Asset senden willst, rufe stattdessen \`send_asset(assetId: "...")\` ` +
-       `als echten Tool-Call auf. Wenn du kein Tool aufrufen kannst oder sollst, ` +
-       `schreibe einen normalen Satz wie "Ich habe die Preisliste für Sie."`
-   )
+    `## ${isEnglish ? "CRITICAL RULES (Highest Priority)" : "WICHTIG — Diese Regeln haben höchste Priorität"}\n` +
+    `1. ${isEnglish ? "ANSWER THE LEAD'S QUESTION" : "LEAD-FRAGE BEANTWORTEN"}: ` +
+      `${isEnglish
+        ? "If the lead has already asked a specific question (about prices, availability, info about a location/product/document), answer it IMMEDIATELY with substance. Do NOT repeat the welcome message ('Welcome!', 'What brought you here?') — the lead has already stated their reason."
+        : "Wenn der Lead bereits eine konkrete Frage gestellt hat (nach Preisen, Verfügbarkeit, Infos zu einem Ort, einem Produkt, einem Dokument), beantworte sie SOFORT inhaltlich. Wiederhole NICHT die Begrüßung ('Willkommen!', 'Was führt Sie zu uns?') — der Lead hat sein Anliegen bereits genannt."
+      }\n` +
+    `2. ${isEnglish ? "NO EMPTY PROMISES" : "KEINE LEEREN VERSPRECHEN"}: ` +
+      `${isEnglish
+        ? "NEVER say you're sending a document (price list, brochure, file, photo) without actually calling the \`send_asset\` tool in the same turn. If no matching asset exists, say so honestly and offer to connect a human."
+        : "Sag NIEMALS, dass du etwas schickst (Preisliste, Broschüre, Dokument, Foto), ohne im selben Durchlauf tatsächlich das Tool \`send_asset\` aufzurufen. Wenn kein passendes Asset existiert, sag ehrlich, dass du es nicht hast."
+      }\n` +
+    `3. ${isEnglish ? "CONCISE ANSWERS" : "PRÄZISE ANTWORTEN"}: ` +
+      `${isEnglish ? "Max 3-4 sentences. At most ONE question per response." : "Maximal 3-4 Sätze. Höchstens EINE Frage pro Antwort."}\n` +
+    `4. ${isEnglish ? "DO NOT INVENT FACTS" : "KEINE FAKTEN ERFINDEN"}: ` +
+      `${isEnglish ? "If you lack information on a topic, say so honestly. Never make up prices, data, or promises." : "Wenn du zu einem Thema keine Informationen im Kontext hast, erfinde keine Preise, Daten oder Versprechungen."}\n` +
+    `5. ${isEnglish ? "SEND ASSETS PROACTIVELY" : "ASSETS AKTIV VERSENDEN"}: ` +
+      `${isEnglish ? "When the lead asks for prices, brochures, photos, floor plans, or documents, call \`search_assets\` immediately, then \`send_asset\` with the matching asset." : "Wenn der Lead nach Preisen, Grundrissen, Broschüren, Fotos oder Dokumenten fragt, rufe \`search_assets\` auf, dann \`send_asset\` mit dem gefundenen Asset."}\n` +
+    `6. ${isEnglish ? "DO NOT FALL BACK TO WELCOME" : "FALL NICHT IN BEGRÜSSUNG ZURÜCK"}: ` +
+      `${isEnglish ? "Never respond with a generic welcome or 'What brought you here?' question. The lead has already stated their interest — address it directly." : "Antworte niemals mit einer Standard-Begrüßung oder 'Was führt Sie zu uns?'. Der Lead hat sein Interesse bereits genannt — gehe direkt darauf ein."}`
+  )
 
   // ── Mission Completion Marker ────────────────────────────────────────────
   // Embed the evaluation directly in the main LLM response so no second call
