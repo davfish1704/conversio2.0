@@ -127,9 +127,13 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
   // reference these naturally and use send_asset to deliver them.
   if (input.retrievedAssets && input.retrievedAssets.length > 0) {
     const lines = input.retrievedAssets.map(
-      (a) => `- ${a.name} (${a.type}): ${a.description ?? "Keine Beschreibung"}\n  URL: ${a.publicUrl}`,
+      (a) => `- Name: ${a.name} (${a.type})\n  assetId: ${a.id}\n  Beschreibung: ${a.description ?? "Keine Beschreibung"}`,
     )
-    parts.push(`## Gefundene Assets\nDer Lead hat nach Dokumenten oder Medien gefragt. Folgende Assets wurden in der Bibliothek gefunden:\n\n${lines.join("\n\n")}\n\nVerwende \`send_asset\` mit der entsprechenden assetId um das Asset zu versenden. Erwähne das Asset natürlich in deiner Antwort. Versprich NIE ein Dokument das bereits existiert — sende es sofort.`)
+    parts.push(
+      `## Gefundene Assets\nDer Lead hat nach Dokumenten oder Medien gefragt. Folgende Assets wurden in der Bibliothek gefunden:\n\n${lines.join("\n\n")}\n\n` +
+      `Um ein Asset zu versenden, rufe \`send_asset\` auf und übergib die assetId (oben angegeben) als Parameter. ` +
+      `Schreibe NICHT "[Send Asset: ...]" oder ähnliche Platzhalter als Text — verwende den echten Tool-Aufruf.`
+    )
   }
 
   // ── Section 6: Memory & Collected Data ────────────────────────────────────
@@ -273,8 +277,14 @@ export function buildSubAgentSystemPrompt(input: PromptBuilderInput): string {
       `falle NICHT in die Standard-Begrüßung zurück. Sage stattdessen ehrlich, ` +
       `dass du kein passendes Dokument hast, und biete an, den Lead mit einem ` +
       `Mitarbeiter zu verbinden, der weiterhelfen kann. Der Lead wartet auf eine ` +
-      `Antwort — nicht auf eine erneute Begrüßung.`
-  )
+      `Antwort — nicht auf eine erneute Begrüßung.\n` +
+    `7. KEINE PLATZHALTER-TEXTE: Schreibe NIEMALS Text wie "[Send Asset: ...]", ` +
+      `"[Tool: ...]" oder "[Document: ...]" in deine Antwort an den Lead. ` +
+      `Das sind keine gültigen Formate — der Lead sieht nur den Rohtext. ` +
+      `Wenn du ein Asset senden willst, rufe stattdessen \`send_asset(assetId: "...")\` ` +
+       `als echten Tool-Call auf. Wenn du kein Tool aufrufen kannst oder sollst, ` +
+       `schreibe einen normalen Satz wie "Ich habe die Preisliste für Sie."`
+   )
 
   // ── Mission Completion Marker ────────────────────────────────────────────
   // Embed the evaluation directly in the main LLM response so no second call

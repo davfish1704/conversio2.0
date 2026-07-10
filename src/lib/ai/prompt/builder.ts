@@ -176,6 +176,12 @@ export function sanitizeAIOutput(text: string): string {
   // Strip mission completion markers — internal signal, not for the user
   cleaned = cleaned.replace(/\[MISSION_(COMPLETED|IN_PROGRESS)\]\s*/gi, "")
 
+  // Strip hallucinated tool-call-as-text patterns — safety net if the AI
+  // writes "[Send Asset: ...]" or similar placeholder syntax instead of
+  // making a real function call
+  cleaned = cleaned.replace(/\[Send\s+(Asset|Document|File|Photo|Image|Video|Audio|PDF):[^\]]*\]\s*/gi, "")
+  cleaned = cleaned.replace(/\[Tool:\s*[^\]]*\]\s*/gi, "")
+
   cleaned = cleaned
     .replace(/\n{3,}/g, "\n\n")
     .trim()
