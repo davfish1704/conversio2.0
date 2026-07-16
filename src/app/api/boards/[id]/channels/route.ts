@@ -87,13 +87,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   if (action === "connect-whatsapp") {
-    const { phoneNumberId, businessAccountId, accessToken, verifyToken } = data
-    const channel = await prisma.boardChannel.upsert({
+    const { phoneNumberId, phoneNumber, businessAccountId, accessToken, verifyToken } = data
+    const channel = await (prisma as any).boardChannel.upsert({
       where: { boardId_platform: { boardId: params.id, platform: "whatsapp" } },
       create: {
         boardId: params.id,
         platform: "whatsapp",
         status: "connected",
+        waPhoneNumber: phoneNumber || null,
         waPhoneNumberId: phoneNumberId,
         waBusinessAccountId: businessAccountId,
         waAccessToken: encrypt(accessToken),
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       update: {
         status: "connected",
+        waPhoneNumber: phoneNumber || null,
         waPhoneNumberId: phoneNumberId,
         waBusinessAccountId: businessAccountId,
         waAccessToken: encrypt(accessToken),

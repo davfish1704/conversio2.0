@@ -496,6 +496,7 @@ model BoardChannel {
   telegramBotToken      String?
   telegramBotUsername   String?
   telegramWebhookSecret String?
+  waPhoneNumber         String?
   waPhoneNumberId       String?
   waAccessToken         String?
   waBusinessAccountId   String?

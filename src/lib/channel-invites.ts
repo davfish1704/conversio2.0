@@ -30,9 +30,9 @@ export async function createInvite(
   })
   if (!lead) throw new Error("Lead nicht gefunden")
 
-  const boardChannel = await prisma.boardChannel.findUnique({
+  const boardChannel = await (prisma as any).boardChannel.findUnique({
     where: { id: targetChannelId },
-    select: { platform: true, waPhoneNumberId: true, telegramBotUsername: true },
+    select: { platform: true, waPhoneNumber: true, waPhoneNumberId: true, telegramBotUsername: true },
   })
   if (!boardChannel) throw new Error("Zielkanal nicht gefunden")
 
@@ -72,9 +72,9 @@ export async function createBoardInvite(
   targetChannelId: string,
   options?: { campaign?: string; createdBy?: string; expiresInDays?: number }
 ): Promise<InviteResult> {
-  const boardChannel = await prisma.boardChannel.findUnique({
+  const boardChannel = await (prisma as any).boardChannel.findUnique({
     where: { id: targetChannelId },
-    select: { boardId: true, platform: true, status: true, waPhoneNumberId: true, telegramBotUsername: true },
+    select: { boardId: true, platform: true, status: true, waPhoneNumber: true, waPhoneNumberId: true, telegramBotUsername: true },
   })
   if (!boardChannel) throw new Error("Zielkanal nicht gefunden")
   if (boardChannel.boardId !== boardId) throw new Error("Zielkanal gehört nicht zu diesem Board")
@@ -125,11 +125,15 @@ export async function createBoardInvite(
 
 export function buildDeepLink(
   platform: string,
-  channel: { waPhoneNumberId?: string | null; telegramBotUsername?: string | null },
+  channel: { waPhoneNumber?: string | null; waPhoneNumberId?: string | null; telegramBotUsername?: string | null },
   token: string
 ): string {
   if (platform === "whatsapp") {
-    return `https://wa.me/${channel.waPhoneNumberId ?? ""}?text=${encodeURIComponent(`Start ${token}`)}`
+    // waPhoneNumber = E.164 business number (e.g. +4915112345678 → "4915112345678" stripped of +)
+    // Fall back to waPhoneNumberId only for legacy setups that stored the phone number there.
+    const raw = channel.waPhoneNumber ?? channel.waPhoneNumberId ?? ""
+    const phone = raw.replace(/^\+/, "")
+    return `https://wa.me/${phone}?text=${encodeURIComponent(`Start ${token}`)}`
   }
   if (platform === "telegram") {
     return `https://t.me/${channel.telegramBotUsername ?? ""}?start=${token}`

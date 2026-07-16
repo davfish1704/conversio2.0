@@ -26,6 +26,7 @@ interface BoardChannel {
   platform: string
   status: string
   telegramBotUsername?: string | null
+  waPhoneNumber?: string | null
   waPhoneNumberId?: string | null
   connectedAt?: string | null
 }
@@ -49,6 +50,7 @@ export default function BoardSettingsPage() {
   const [tgToken, setTgToken] = useState("")
   const [connectingTg, setConnectingTg] = useState(false)
   const [waPhone, setWaPhone] = useState("")
+  const [waNumber, setWaNumber] = useState("")
   const [waBiz, setWaBiz] = useState("")
   const [waToken, setWaToken] = useState("")
   const [waVerify, setWaVerify] = useState("")
@@ -328,12 +330,12 @@ export default function BoardSettingsPage() {
       const res = await fetch(`/api/boards/${id}/channels`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "connect-whatsapp", phoneNumberId: waPhone, businessAccountId: waBiz, accessToken: waToken, verifyToken: waVerify }),
+        body: JSON.stringify({ action: "connect-whatsapp", phoneNumberId: waPhone, phoneNumber: waNumber || null, businessAccountId: waBiz, accessToken: waToken, verifyToken: waVerify }),
       })
       const data = await res.json()
       if (!res.ok) { toast({ title: data.error || "Verbindung fehlgeschlagen", variant: "destructive" }); return }
       toast({ title: "WhatsApp verbunden" })
-      setWaPhone(""); setWaBiz(""); setWaToken(""); setWaVerify("")
+      setWaPhone(""); setWaNumber(""); setWaBiz(""); setWaToken(""); setWaVerify("")
       reloadChannels()
     } finally {
       setConnectingWa(false)
@@ -531,7 +533,7 @@ export default function BoardSettingsPage() {
                   ? "bg-success/10 text-success"
                   : "bg-muted text-muted-foreground"
               )}>
-                {waChannel?.status === "connected" ? `${waChannel.waPhoneNumberId}` : "Nicht verbunden"}
+                {waChannel?.status === "connected" ? (waChannel.waPhoneNumber ?? waChannel.waPhoneNumberId ?? "verbunden") : "Nicht verbunden"}
               </span>
             </div>
             {waChannel?.status === "connected" ? (
@@ -543,10 +545,11 @@ export default function BoardSettingsPage() {
             ) : (
               <div className="space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <Input value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="Phone Number ID" />
+                  <Input value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="Phone Number ID (Meta API)" />
+                  <Input value={waNumber} onChange={e => setWaNumber(e.target.value)} placeholder="Business-Nummer (+4915…)" />
                   <Input value={waBiz} onChange={e => setWaBiz(e.target.value)} placeholder="Business Account ID" />
-                  <Input type="password" value={waToken} onChange={e => setWaToken(e.target.value)} placeholder="Access Token" />
                   <Input value={waVerify} onChange={e => setWaVerify(e.target.value)} placeholder="Verify Token (selbst wählen)" />
+                  <Input type="password" value={waToken} onChange={e => setWaToken(e.target.value)} placeholder="Access Token" className="col-span-2" />
                 </div>
                 <Button size="sm" onClick={connectWhatsApp} disabled={connectingWa || !waPhone.trim() || !waToken.trim()}>
                   {connectingWa ? "…" : "WhatsApp verbinden"}
@@ -579,7 +582,7 @@ export default function BoardSettingsPage() {
           {channels.filter(c => c.status === "connected" && ["telegram", "whatsapp"].includes(c.platform)).map(ch => {
             const label = ch.platform === "telegram"
               ? `Telegram${ch.telegramBotUsername ? ` — @${ch.telegramBotUsername}` : ""}`
-              : `WhatsApp${ch.waPhoneNumberId ? ` — ${ch.waPhoneNumberId}` : ""}`
+              : `WhatsApp${ch.waPhoneNumber ? ` — ${ch.waPhoneNumber}` : ch.waPhoneNumberId ? ` — ${ch.waPhoneNumberId}` : ""}`
             const generated = acqGenerated[ch.id]
             const chInvites = acqInvites.filter(inv => inv.platform === ch.platform)
 

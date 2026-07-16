@@ -76,7 +76,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     },
     include: {
       channel: {
-        select: { platform: true, telegramBotUsername: true, waPhoneNumberId: true },
+        select: { platform: true, telegramBotUsername: true, waPhoneNumber: true, waPhoneNumberId: true },
       },
     },
     orderBy: { createdAt: "desc" },

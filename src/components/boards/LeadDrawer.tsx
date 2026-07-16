@@ -6,6 +6,7 @@ import { type Lead } from "./LeadCard"
 import { getInitials, getAvatarColor, formatRelativeTime } from "@/lib/utils/formatting"
 import { LanguageContext } from "@/lib/LanguageContext"
 import TelegramInviteUI from "@/components/leads/TelegramInviteUI"
+import WhatsAppInviteUI from "@/components/leads/WhatsAppInviteUI"
 import ChannelInviteUI from "@/components/leads/ChannelInviteUI"
 import AgentRunTimeline from "@/components/boards/AgentRunTimeline"
 import { Button } from "@/components/ui/button"
@@ -396,6 +397,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
   if (!lead) return null
 
   const needsTelegramInvite = lead.channel === "telegram" && !(lead as any).externalId && !(lead as any).conversationId
+  const needsWhatsAppInvite = lead.channel === "whatsapp" && !(lead as any).externalId && !(lead as any).conversationId
 
   const locale = language === "de" ? "de-DE" : "en-US"
 
@@ -476,7 +478,7 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
           <div className="flex-1 flex flex-col min-w-0 border-r border-border">
 
             {/* Tab bar */}
-            {!needsTelegramInvite && (
+            {!needsTelegramInvite && !needsWhatsAppInvite && (
               <div className="flex items-center border-b border-border px-4 shrink-0">
                 <button
                   onClick={() => setActiveTab("chat")}
@@ -505,6 +507,8 @@ export default function LeadDrawer({ lead, states, boardId, onClose, onUpdate }:
 
             {needsTelegramInvite ? (
               <TelegramInviteUI leadId={lead.id} />
+            ) : needsWhatsAppInvite ? (
+              <WhatsAppInviteUI leadId={lead.id} />
             ) : activeTab === "ai-activity" ? (
               <div className="flex-1 overflow-y-auto p-4">
                 <AgentRunTimeline leadId={lead.id} />
