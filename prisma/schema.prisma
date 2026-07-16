@@ -615,9 +615,10 @@ model Asset {
   type        AssetType
   mimeType    String
   sizeBytes   Int
-  r2Key       String       @unique
-  publicUrl   String
-  tags        String[]     @default([])
+  r2Key         String       @unique
+  publicUrl     String
+  extractedText String?      @db.Text
+  tags          String[]     @default([])
   uploadedBy  String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt

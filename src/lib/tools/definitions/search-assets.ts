@@ -5,15 +5,18 @@ import type { Conversation, Board, State } from "@prisma/client"
 export const searchAssetsTool: Tool = {
   name: "search_assets",
   description:
-    "Sucht in der Asset-Bibliothek des Boards nach Bildern, PDFs oder Dokumenten. " +
-    "Verwende dieses Tool wenn der Kunde etwas sehen möchte (Fotos, Grundrisse, Verträge) " +
-    "oder wenn relevante Medien das Gespräch voranbringen würden. " +
-    "Gibt Asset-IDs und URLs zurück, die du dann mit send_asset versenden kannst.\n\n" +
+    "Sucht in der Asset-Bibliothek des Boards nach Bildern, PDFs oder Dokumenten — " +
+    "inklusive des extrahierten Volltexts aus PDFs. Verwende dieses Tool SOFORT wenn der Lead " +
+    "nach Preisen, Kosten, ROI, Rendite, Leasehold, Zahlungsplan, Fotos, Grundrissen, Broschüren oder Verträgen fragt. " +
+    "Gibt Asset-IDs und publicUrls zurück, die du dann mit send_asset versenden kannst.\n\n" +
     "WICHTIG — Rufe dieses Tool NUR EINMAL pro Anfrage auf. " +
-    "Wenn keine Assets gefunden werden, informiere den Kunden ehrlich: " +
-    "'Ich habe leider kein passendes Dokument in unserer Bibliothek gefunden.' " +
+    "Schreibe NICHT '[Searching assets...]' — das ist vorgetäuschtes Verhalten. Benutze diesen echten Tool-Aufruf.\n\n" +
+    "WENN KEINE ASSETS GEFUNDEN WERDEN: Sage dem Lead EHRLICH und DIREKT, dass du die " +
+    "gesuchten Informationen oder Dokumente gerade nicht in der Bibliothek hast. " +
+    "ERFINDE KEINE Zahlen, Preise, ROI-Werte oder Konditionen als Ersatz. " +
+    "Biete stattdessen an, einen menschlichen Ansprechpartner zu verbinden (escalate_to_supervisor). " +
     "Rufe search_assets NICHT wiederholt mit anderen Suchbegriffen auf — " +
-    "das Ergebnis bleibt gleich und blockiert die Konversation.",
+    "das Ergebnis bleibt gleich und der Suchraum ist vollständig.",
   parameters: {
     type: "object",
     properties: {
@@ -59,16 +62,17 @@ export const searchAssetsTool: Tool = {
 
     try {
       // Stage-linked assets rank first — fetch them separately, then fill with board-wide results
-      const stageLinked = await prisma.asset.findMany({
+      const stageLinked = await (prisma as any).asset.findMany({
         where: {
           boardId: context.boardId,
           links:   { some: { stateId: state.id } },
-          ...(type  ? { type: type as "IMAGE" | "PDF" | "AUDIO" | "VIDEO" | "DOCUMENT" } : {}),
+          ...(type  ? { type } : {}),
           ...(tags?.length ? { tags: { hasSome: tags } } : {}),
           OR: [
-            { name:        { contains: query, mode: "insensitive" } },
-            { description: { contains: query, mode: "insensitive" } },
-            { tags:        { hasSome: [query] } },
+            { name:          { contains: query, mode: "insensitive" } },
+            { description:   { contains: query, mode: "insensitive" } },
+            { tags:          { hasSome: [query] } },
+            { extractedText: { contains: query, mode: "insensitive" } },
           ],
         },
         select: { id: true, name: true, type: true, publicUrl: true, description: true, tags: true },
@@ -80,15 +84,16 @@ export const searchAssetsTool: Tool = {
 
       const boardWide =
         remaining > 0
-          ? await prisma.asset.findMany({
+          ? await (prisma as any).asset.findMany({
               where: {
                 boardId: context.boardId,
                 id:      { notIn: stageLinkedIds },
-                ...(type  ? { type: type as "IMAGE" | "PDF" | "AUDIO" | "VIDEO" | "DOCUMENT" } : {}),
+                ...(type  ? { type } : {}),
                 ...(tags?.length ? { tags: { hasSome: tags } } : {}),
                 OR: [
-                  { name:        { contains: query, mode: "insensitive" } },
-                  { description: { contains: query, mode: "insensitive" } },
+                  { name:          { contains: query, mode: "insensitive" } },
+                  { description:   { contains: query, mode: "insensitive" } },
+                  { extractedText: { contains: query, mode: "insensitive" } },
                   { tags:        { hasSome: [query] } },
                 ],
               },

@@ -3,6 +3,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { ALLOWED_MIME_TYPES } from "@/lib/validators/asset"
 import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
+import { downloadFromR2 } from "@/lib/r2"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await auth()
@@ -54,6 +56,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       include: { links: { select: { stateId: true } } },
     })
+    // PDF-Volltext: Datei von R2 holen und indexieren (fire-and-forget)
+    if (contentType === "application/pdf") {
+      downloadFromR2(r2Key)
+        .then((buffer) => extractPdfText(buffer))
+        .then((text) => {
+          if (text) {
+            return (prisma as any).asset.update({
+              where: { id: asset.id },
+              data: { extractedText: text },
+            })
+          }
+        })
+        .catch((err) => console.error("[asset-confirm] PDF-Textextraktion fehlgeschlagen:", err))
+    }
+
     return NextResponse.json(asset, { status: 201 })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

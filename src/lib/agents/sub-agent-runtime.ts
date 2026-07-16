@@ -184,15 +184,16 @@ export async function executeSubAgentRun(
         searchTerms.push(...words)
       }
 
-      const orConditions: Array<{ name?: { contains: string; mode: "insensitive" }; description?: { contains: string; mode: "insensitive" } }> = []
+      const orConditions: Array<Record<string, unknown>> = []
       for (const term of searchTerms) {
         if (!term || term.length < 2) continue
-        orConditions.push({ name: { contains: term, mode: "insensitive" } })
-        orConditions.push({ description: { contains: term, mode: "insensitive" } })
+        orConditions.push({ name:          { contains: term, mode: "insensitive" } })
+        orConditions.push({ description:   { contains: term, mode: "insensitive" } })
+        orConditions.push({ extractedText: { contains: term, mode: "insensitive" } })
       }
 
       if (orConditions.length > 0) {
-        retrievedAssets = await prisma.asset.findMany({
+        retrievedAssets = await (prisma as any).asset.findMany({
           where: { boardId, OR: orConditions },
           select: { id: true, name: true, type: true, publicUrl: true, description: true },
           take: 5,

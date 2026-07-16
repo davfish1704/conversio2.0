@@ -97,6 +97,113 @@ async function processWaMessage(msg: Record<string, unknown>, boardId: string) {
   // Spam check
   if (isSpamMessage(content)) { flowLog("spam_blocked", `content=${content.slice(0, 80)}`); return }
 
+  // Invite-Flow: User sendet "Start <token>" als erste Nachricht
+  const tokenMatch = content.match(TOKEN_RE)
+  if (tokenMatch) {
+    const token = tokenMatch[1]
+    flowLog("invite_token_detected", `phone=${phone} token=${token}`)
+    const invite = await findInviteByToken(token)
+
+    if (!invite) {
+      flowLog("invite_not_found", `token=${token}`)
+      return
+    }
+    if ((invite as any).status === "CONSUMED") {
+      flowLog("invite_consumed", `token=${token}`)
+      return
+    }
+    if ((invite as any).status !== "PENDING" || new Date((invite as any).expiresAt) <= new Date()) {
+      flowLog("invite_expired", `token=${token}`)
+      return
+    }
+    if ((invite as any).boardId !== boardId) {
+      flowLog("invite_board_mismatch", `token=${token}`)
+      return
+    }
+
+    if ((invite as any).source === "BOARD_ACQUISITION") {
+      const defaultState = await (prisma as any).state.findFirst({
+        where: { boardId },
+        orderBy: { orderIndex: "asc" },
+      })
+      const boardMeta = await prisma.board.findUnique({
+        where: { id: boardId },
+        select: { adminStatus: true, ownerStatus: true },
+      })
+      const boardActive = boardMeta
+        ? (boardMeta as any).adminStatus.toString() !== "SUSPENDED" && (boardMeta as any).ownerStatus !== "INACTIVE"
+        : true
+
+      const newLead = await (prisma as any).lead.create({
+        data: {
+          boardId,
+          phone,
+          name: phone,
+          channel: "whatsapp",
+          source: (invite as any).campaign
+            ? `meta_ad:${(invite as any).campaign}`
+            : "whatsapp_acquisition",
+          tags: [],
+          currentStateId: defaultState?.id ?? null,
+          customData: {},
+        },
+      })
+      const conv = await (prisma as any).conversation.create({
+        data: {
+          leadId: newLead.id,
+          boardId,
+          channel: "whatsapp",
+          status: "ACTIVE",
+          lastMessageAt: new Date(),
+          currentStateId: defaultState?.id ?? null,
+        },
+      })
+      await consumeInvite(token, conv.id)
+      flowLog("acquisition_lead_created", `leadId=${newLead.id} convId=${conv.id}`, {
+        campaign: (invite as any).campaign ?? null,
+      })
+      if (boardActive) {
+        await enqueueJob({
+          type: "process_message",
+          payload: { conversationId: conv.id, userMessage: content },
+          leadId: newLead.id,
+          boardId,
+        })
+      }
+      return
+    }
+
+    // CASE B: LEAD_REINVITE — bestehenden Lead mit WhatsApp-Channel verknüpfen
+    const existingLead = (invite as any).lead
+    let conv = await (prisma as any).conversation.findFirst({
+      where: { leadId: existingLead.id, channel: "whatsapp", boardId },
+    })
+    if (!conv) {
+      conv = await (prisma as any).conversation.create({
+        data: {
+          leadId: existingLead.id,
+          boardId,
+          channel: "whatsapp",
+          status: "ACTIVE",
+          lastMessageAt: new Date(),
+        },
+      })
+    } else {
+      await (prisma as any).conversation.update({
+        where: { id: conv.id },
+        data: { lastMessageAt: new Date() },
+      })
+    }
+    // WA-Phone auf Lead schreiben — Dispatcher braucht lead.phone für Outbound
+    await (prisma as any).lead.update({
+      where: { id: existingLead.id },
+      data: { phone },
+    })
+    await consumeInvite(token, conv.id)
+    flowLog("reinvite_channel_added", `leadId=${existingLead.id} convId=${conv.id}`)
+    return
+  }
+
   // Normaler Flow: Lead per Telefonnummer suchen oder anlegen
   let lead = await (prisma as any).lead.findFirst({
     where: { boardId, phone, channel: "whatsapp" },

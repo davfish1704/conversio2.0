@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3"
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 export function requireEnv(key: string): string {
@@ -47,6 +47,22 @@ export async function deleteFromR2(key: string): Promise<void> {
       Key: key,
     })
   )
+}
+
+export async function downloadFromR2(key: string): Promise<Buffer> {
+  const response = await getR2Client().send(
+    new GetObjectCommand({
+      Bucket: requireEnv("R2_BUCKET_NAME"),
+      Key: key,
+    })
+  )
+  if (!response.Body) throw new Error(`R2: leerer Body für key=${key}`)
+  // ReadableStream → Buffer (works in Node.js 18+)
+  const chunks: Uint8Array[] = []
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks)
 }
 
 export async function getPresignedUploadUrl(

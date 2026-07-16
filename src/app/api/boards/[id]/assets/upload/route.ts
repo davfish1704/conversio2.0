@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { uploadToR2 } from "@/lib/r2"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@/lib/validators/asset"
 import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
@@ -79,6 +80,20 @@ export async function POST(
       },
       include: { links: { select: { stateId: true } } },
     })
+
+    // PDF-Volltext extrahieren und für die Asset-Suche indexieren (fire-and-forget)
+    if (file.type === "application/pdf") {
+      extractPdfText(buffer)
+        .then((text) => {
+          if (text) {
+            return (prisma as any).asset.update({
+              where: { id: asset.id },
+              data: { extractedText: text },
+            })
+          }
+        })
+        .catch((err) => console.error("[asset-upload] PDF-Textextraktion fehlgeschlagen:", err))
+    }
 
     return NextResponse.json(asset, { status: 201 })
   } catch (err) {
