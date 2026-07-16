@@ -3,6 +3,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { uploadToR2 } from "@/lib/r2"
 import { extractPdfText } from "@/lib/pdf/extract-text"
+import { generateEmbedding, assetEmbeddingText } from "@/lib/embeddings"
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from "@/lib/validators/asset"
 import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
 
@@ -81,18 +82,32 @@ export async function POST(
       include: { links: { select: { stateId: true } } },
     })
 
-    // PDF-Volltext extrahieren und für die Asset-Suche indexieren (fire-and-forget)
+    // PDF-Volltext extrahieren + Embedding generieren (fire-and-forget)
     if (file.type === "application/pdf") {
       extractPdfText(buffer)
-        .then((text) => {
-          if (text) {
-            return (prisma as any).asset.update({
-              where: { id: asset.id },
-              data: { extractedText: text },
-            })
+        .then(async (text) => {
+          const updates: Record<string, unknown> = {}
+          if (text) updates.extractedText = text
+          const embText = assetEmbeddingText({ name, description, extractedText: text })
+          const emb = await generateEmbedding(embText)
+          if (emb) updates.embedding = `[${emb.join(",")}]`
+          if (Object.keys(updates).length) {
+            return (prisma as any).asset.update({ where: { id: asset.id }, data: updates })
           }
         })
-        .catch((err) => console.error("[asset-upload] PDF-Textextraktion fehlgeschlagen:", err))
+        .catch((err) => console.error("[asset-upload] PDF-Indexierung fehlgeschlagen:", err))
+    } else {
+      // Für Nicht-PDF-Assets direkt Embedding aus Name + Beschreibung
+      const embText = assetEmbeddingText({ name, description })
+      generateEmbedding(embText)
+        .then((emb) => {
+          if (!emb) return
+          return (prisma as any).asset.update({
+            where: { id: asset.id },
+            data: { embedding: `[${emb.join(",")}]` },
+          })
+        })
+        .catch((err) => console.error("[asset-upload] Embedding fehlgeschlagen:", err))
     }
 
     return NextResponse.json(asset, { status: 201 })

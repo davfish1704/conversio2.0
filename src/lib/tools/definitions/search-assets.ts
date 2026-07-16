@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db"
 import type { Tool, ToolResult, ToolExecutionContext } from "@/lib/tools/registry"
 import type { Conversation, Board, State } from "@prisma/client"
+import { generateEmbedding, semanticAssetSearch } from "@/lib/embeddings"
 
 export const searchAssetsTool: Tool = {
   name: "search_assets",
@@ -61,48 +62,68 @@ export const searchAssetsTool: Tool = {
     const limit   = Math.min(Number(args.limit ?? 5), 20)
 
     try {
-      // Stage-linked assets rank first — fetch them separately, then fill with board-wide results
-      const stageLinked = await (prisma as any).asset.findMany({
-        where: {
-          boardId: context.boardId,
-          links:   { some: { stateId: state.id } },
-          ...(type  ? { type } : {}),
-          ...(tags?.length ? { tags: { hasSome: tags } } : {}),
-          OR: [
-            { name:          { contains: query, mode: "insensitive" } },
-            { description:   { contains: query, mode: "insensitive" } },
-            { tags:          { hasSome: [query] } },
-            { extractedText: { contains: query, mode: "insensitive" } },
-          ],
-        },
-        select: { id: true, name: true, type: true, publicUrl: true, description: true, tags: true },
-        take: limit,
-      })
+      let assets: Array<{ id: string; name: string; type: string; publicUrl: string; description: string | null; tags: string[] }> = []
 
-      const remaining = limit - stageLinked.length
-      const stageLinkedIds = stageLinked.map((a) => a.id)
+      // ── Semantic path ──────────────────────────────────────────────────────
+      const queryEmbedding = await generateEmbedding(query).catch(() => null)
+      if (queryEmbedding) {
+        assets = await semanticAssetSearch({
+          boardId:   context.boardId,
+          embedding: queryEmbedding,
+          assetType: type,
+          limit,
+          threshold: 0.65,
+        })
+        if (tags?.length) {
+          assets = assets.filter((a) => tags.some((t) => a.tags.includes(t)))
+        }
+      }
 
-      const boardWide =
-        remaining > 0
-          ? await (prisma as any).asset.findMany({
-              where: {
-                boardId: context.boardId,
-                id:      { notIn: stageLinkedIds },
-                ...(type  ? { type } : {}),
-                ...(tags?.length ? { tags: { hasSome: tags } } : {}),
-                OR: [
-                  { name:          { contains: query, mode: "insensitive" } },
-                  { description:   { contains: query, mode: "insensitive" } },
-                  { extractedText: { contains: query, mode: "insensitive" } },
-                  { tags:        { hasSome: [query] } },
-                ],
-              },
-              select: { id: true, name: true, type: true, publicUrl: true, description: true, tags: true },
-              take: remaining,
-            })
-          : []
+      // ── ILIKE fallback (when semantic returned nothing or embedding unavailable) ──
+      if (assets.length === 0) {
+        // Stage-linked assets rank first
+        const stageLinked = await (prisma as any).asset.findMany({
+          where: {
+            boardId: context.boardId,
+            links:   { some: { stateId: state.id } },
+            ...(type  ? { type } : {}),
+            ...(tags?.length ? { tags: { hasSome: tags } } : {}),
+            OR: [
+              { name:          { contains: query, mode: "insensitive" } },
+              { description:   { contains: query, mode: "insensitive" } },
+              { tags:          { hasSome: [query] } },
+              { extractedText: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true, name: true, type: true, publicUrl: true, description: true, tags: true },
+          take: limit,
+        })
 
-      const assets = [...stageLinked, ...boardWide]
+        const remaining      = limit - stageLinked.length
+        const stageLinkedIds = stageLinked.map((a: { id: string }) => a.id)
+
+        const boardWide =
+          remaining > 0
+            ? await (prisma as any).asset.findMany({
+                where: {
+                  boardId: context.boardId,
+                  id:      { notIn: stageLinkedIds },
+                  ...(type  ? { type } : {}),
+                  ...(tags?.length ? { tags: { hasSome: tags } } : {}),
+                  OR: [
+                    { name:          { contains: query, mode: "insensitive" } },
+                    { description:   { contains: query, mode: "insensitive" } },
+                    { extractedText: { contains: query, mode: "insensitive" } },
+                    { tags:          { hasSome: [query] } },
+                  ],
+                },
+                select: { id: true, name: true, type: true, publicUrl: true, description: true, tags: true },
+                take: remaining,
+              })
+            : []
+
+        assets = [...stageLinked, ...boardWide]
+      }
 
       if (assets.length === 0) {
         return {

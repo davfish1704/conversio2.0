@@ -19,6 +19,7 @@ import {
   type SubAgentKnowledge,
 } from "./sub-agent-prompt-builder"
 import type { QualificationField } from "@/lib/types"
+import { generateEmbedding, semanticAssetSearch, semanticDocSearch } from "@/lib/embeddings"
 
 function flowLog(step: string, msg: string, data?: Record<string, unknown>) {
   const extra = data ? ` ${JSON.stringify(data)}` : ""
@@ -143,67 +144,85 @@ export async function executeSubAgentRun(
     : []
 
   // ── Step 3: Load Knowledge ─────────────────────────────────────────────────
+  // Generate query embedding once — reused for both doc and asset semantic search
+  const msgEmbedding = await generateEmbedding(userMessage).catch(() => null)
+
+  // Semantic BrainDocument retrieval — top-5 most relevant docs for this message
+  let semanticDocs: { id: string; name: string; content: string }[] = []
+  if (msgEmbedding) {
+    try {
+      semanticDocs = await semanticDocSearch({ boardId, embedding: msgEmbedding, limit: 5 })
+      if (semanticDocs.length > 0) {
+        console.log(`[AgentRuntime] Semantic Docs gefunden: ${semanticDocs.length}`)
+      }
+    } catch (docErr) {
+      console.error("[AgentRuntime] Semantic doc search fehlgeschlagen:", docErr)
+    }
+  }
 
   const knowledge: SubAgentKnowledge = {
-    rules: board.brainRules     ?? [],
-    faqs:  board.brainFAQs      ?? [],
-    docs:  board.brainDocuments ?? [],
+    rules: board.brainRules ?? [],
+    faqs:  board.brainFAQs  ?? [],
+    // Use semantic results when available; fall back to all loaded docs
+    docs:  semanticDocs.length > 0 ? semanticDocs : (board.brainDocuments ?? []),
   }
 
   // ── Step 3b: Automatic Asset Pre-Retrieval ─────────────────────────────────
-  // Scan the user message for asset-related keywords BEFORE building the prompt.
-  // If a match is found, query the board's assets and inject them into context.
-  // Also does a fallback search for substantive messages that didn't match keywords.
-  const lowerMsg = userMessage.toLowerCase()
-  const wantsAsset = ASSET_TRIGGER_KEYWORDS.some((kw) => lowerMsg.includes(kw))
-  const isGreeting = GREETING_PATTERNS.some((p) => p.test(userMessage))
+  const lowerMsg    = userMessage.toLowerCase()
+  const wantsAsset  = ASSET_TRIGGER_KEYWORDS.some((kw) => lowerMsg.includes(kw))
+  const isGreeting  = GREETING_PATTERNS.some((p) => p.test(userMessage))
   const isLongEnough = userMessage.length >= MIN_ASSET_SEARCH_LENGTH && userMessage.split(" ").length > 3
 
-  let retrievedAssets: { id: string; name: string; type: string; publicUrl: string; description: string | null }[] = []
+  let retrievedAssets: { id: string; name: string; type: string; publicUrl: string; description: string | null; tags?: string[] }[] = []
 
   const shouldSearch = wantsAsset || (isLongEnough && !isGreeting)
 
   if (shouldSearch) {
     console.log(`[AgentRuntime] Asset-Suche: trigger=${wantsAsset} longEnough=${isLongEnough} greeting=${isGreeting} msg="${userMessage.slice(0, 60)}"`)
     try {
-      const searchTerms: string[] = []
-
-      if (wantsAsset) {
-        searchTerms.push(userMessage.slice(0, 60))
-        if (userMessage.split(" ").length > 1) {
-          searchTerms.push(...userMessage.split(" ").slice(0, 5))
+      // ── Semantic path (reuses embedding computed above) ──
+      if (msgEmbedding) {
+        retrievedAssets = await semanticAssetSearch({ boardId, embedding: msgEmbedding, limit: 5 })
+        if (retrievedAssets.length > 0) {
+          console.log(`[AgentRuntime] Semantic Assets gefunden: ${retrievedAssets.length}`)
+          for (const a of retrievedAssets) console.log(`  → ${a.name} (${a.type})`)
         }
-      } else {
-        // Fallback: use meaningful words from the message (skip very short words)
-        const words = userMessage
-          .toLowerCase()
-          .replace(/[^a-zäöüß\s]/g, "")
-          .split(/\s+/)
-          .filter((w) => w.length > 3)
-          .slice(0, 4)
-        searchTerms.push(...words)
       }
 
-      const orConditions: Array<Record<string, unknown>> = []
-      for (const term of searchTerms) {
-        if (!term || term.length < 2) continue
-        orConditions.push({ name:          { contains: term, mode: "insensitive" } })
-        orConditions.push({ description:   { contains: term, mode: "insensitive" } })
-        orConditions.push({ extractedText: { contains: term, mode: "insensitive" } })
-      }
+      // ── ILIKE fallback ──
+      if (retrievedAssets.length === 0) {
+        const searchTerms: string[] = []
+        if (wantsAsset) {
+          searchTerms.push(userMessage.slice(0, 60))
+          if (userMessage.split(" ").length > 1) searchTerms.push(...userMessage.split(" ").slice(0, 5))
+        } else {
+          const words = userMessage
+            .toLowerCase()
+            .replace(/[^a-zäöüß\s]/g, "")
+            .split(/\s+/)
+            .filter((w) => w.length > 3)
+            .slice(0, 4)
+          searchTerms.push(...words)
+        }
 
-      if (orConditions.length > 0) {
-        retrievedAssets = await (prisma as any).asset.findMany({
-          where: { boardId, OR: orConditions },
-          select: { id: true, name: true, type: true, publicUrl: true, description: true },
-          take: 5,
-        })
-      }
+        const orConditions: Array<Record<string, unknown>> = []
+        for (const term of searchTerms) {
+          if (!term || term.length < 2) continue
+          orConditions.push({ name:          { contains: term, mode: "insensitive" } })
+          orConditions.push({ description:   { contains: term, mode: "insensitive" } })
+          orConditions.push({ extractedText: { contains: term, mode: "insensitive" } })
+        }
 
-      if (retrievedAssets.length > 0) {
-        console.log(`[AgentRuntime] Auto-Assets gefunden: ${retrievedAssets.length}`)
-        for (const a of retrievedAssets) {
-          console.log(`  → ${a.name} (${a.type}) ${a.publicUrl}`)
+        if (orConditions.length > 0) {
+          retrievedAssets = await (prisma as any).asset.findMany({
+            where: { boardId, OR: orConditions },
+            select: { id: true, name: true, type: true, publicUrl: true, description: true },
+            take: 5,
+          })
+          if (retrievedAssets.length > 0) {
+            console.log(`[AgentRuntime] ILIKE Assets gefunden: ${retrievedAssets.length}`)
+            for (const a of retrievedAssets) console.log(`  → ${a.name} (${a.type}) ${a.publicUrl}`)
+          }
         }
       }
     } catch (assetErr) {

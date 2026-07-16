@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { assertBoardAccess, toNextResponse } from "@/lib/auth/assert-board-access"
+import { generateEmbedding } from "@/lib/embeddings"
 
 export async function GET(
   req: NextRequest,
@@ -57,6 +58,17 @@ export async function POST(
         category,
       },
     })
+
+    // Embedding generieren und speichern (fire-and-forget)
+    generateEmbedding(`${name}\n\n${content}`)
+      .then((emb) => {
+        if (!emb) return
+        return (prisma as any).brainDocument.update({
+          where: { id: document.id },
+          data: { embedding: `[${emb.join(",")}]` },
+        })
+      })
+      .catch((err) => console.error("[brain-docs] Embedding fehlgeschlagen:", err))
 
     return NextResponse.json({ document }, { status: 201 })
   } catch (error) {
