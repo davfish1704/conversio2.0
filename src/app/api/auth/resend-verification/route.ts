@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
     data: { verifyToken, verifyTokenExpiry },
   })
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://conversio2-0-8wks.vercel.app"
+  if (!process.env.NEXT_PUBLIC_APP_URL && process.env.NODE_ENV === "production") {
+    throw new Error("NEXT_PUBLIC_APP_URL ist nicht gesetzt")
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   const verifyUrl = `${appUrl}/verify-email?token=${verifyToken}`
 
   if (process.env.RESEND_API_KEY) {

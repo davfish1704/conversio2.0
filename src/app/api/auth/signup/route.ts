@@ -12,7 +12,10 @@ const signupSchema = z.object({
 })
 
 async function sendVerificationEmail(email: string, name: string, token: string) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://conversio2-0-8wks.vercel.app"
+  if (!process.env.NEXT_PUBLIC_APP_URL && process.env.NODE_ENV === "production") {
+    throw new Error("NEXT_PUBLIC_APP_URL ist nicht gesetzt")
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
   const verifyUrl = `${appUrl}/verify-email?token=${token}`
 
   if (process.env.RESEND_API_KEY) {

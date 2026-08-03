@@ -20,11 +20,14 @@ export class OpenRouterProvider implements AIProvider {
   private client: OpenAI
 
   constructor(apiKey: string) {
+    if (!process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_URL ist nicht gesetzt")
+    }
     this.client = new OpenAI({
       apiKey,
       baseURL: "https://openrouter.ai/api/v1",
       defaultHeaders: {
-        "HTTP-Referer": process.env.NEXTAUTH_URL ?? "https://conversio.app",
+        "HTTP-Referer": process.env.NEXTAUTH_URL ?? "http://localhost:3000",
         "X-Title": "Conversio CRM",
       },
     })

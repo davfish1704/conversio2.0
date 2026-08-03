@@ -38,7 +38,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const botUsername = testData.result.username
     const secret = randomBytes(16).toString("hex")
-    const appUrl = process.env.NEXTAUTH_URL || "https://conversio2-0-8wks.vercel.app"
+    if (!process.env.NEXTAUTH_URL && process.env.NODE_ENV === "production") {
+      throw new Error("NEXTAUTH_URL ist nicht gesetzt")
+    }
+    const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const webhookUrl = `${appUrl}/api/telegram/webhook/${params.id}`
 
     // Set webhook
