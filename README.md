@@ -101,10 +101,10 @@ Der Supervisor Agent überwacht automatisch alle Sub-Agent Runs, erkennt Problem
 
 ### Cron Jobs
 
-| Cron | Schedule | Beschreibung |
-|------|----------|-------------|
-| `/api/cron/supervisor-scan` | Alle 5 Minuten | Detection Rules auf allen Boards ausführen |
-| `/api/cron/supervisor-audit` | Alle 4 Stunden | Periodisches Board-Audit (existierend) |
+Läuft nicht mehr über Vercel Cron — siehe [Worker](#worker-job-runner--supervisor-timer) unten.
+Die HTTP-Routen (`/api/cron/supervisor-scan`, `/api/cron/supervisor-audit`, `/api/cron/process-jobs`,
+`/api/cron/check-stuck-leads`) existieren weiter als Rückweg, sind aber standardmäßig deaktiviert
+(`CRON_ROUTES_ENABLED`, s.u.).
 
 ### Telegram Callback Handler
 
@@ -126,6 +126,32 @@ CRON_SECRET="openssl rand -hex 32"
 
 ```bash
 npx tsx scripts/test-supervisor-scan.ts
+```
+
+## ⚙️ Worker (Job Runner + Supervisor Timer)
+
+Ersetzt Vercel Cron auf dem VPS/Coolify-Deployment: ein einziger Node-Prozess pollt die
+Job-Queue und fährt die Supervisor-Timer selbst, statt über HTTP-Cron-Routen.
+
+**WICHTIG — GENAU EIN Prozess.** Der Conversation-Lock in `src/lib/jobs/runner.ts`
+(`acquireConversationLock`) ist eine prozesslokale In-Memory-Map, nicht verteilt. Zwei
+gleichzeitig laufende Worker-Instanzen (oder Replicas > 1) können denselben Conversation
+gleichzeitig verarbeiten — der Lock schützt nicht über Prozessgrenzen hinweg. Als Coolify-
+Resource mit **Replicas = 1** deployen, nicht horizontal skalieren.
+
+Start-Kommando:
+```bash
+npm run worker
+```
+
+### Environment Variables
+
+```
+WORKER_POLL_MS=3000                # Job-Runner Poll-Intervall (Default 3s)
+WORKER_SUPERVISOR_SCAN_MS=300000   # Supervisor-Scan-Intervall (Default 5 Min)
+WORKER_SUPERVISOR_AUDIT_MS=14400000  # Supervisor-Audit-Intervall (Default 4h)
+WORKER_STUCK_LEADS_MS=600000       # Stuck-Lead-Check-Intervall (Default 10 Min)
+CRON_ROUTES_ENABLED=false          # HTTP-Cron-Routen als Rückweg (Default aus → 204 ohne Arbeit)
 ```
 
 ## 🎯 Next Steps (Baustein 2: Auth)

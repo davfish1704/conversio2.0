@@ -6,6 +6,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.CRON_ROUTES_ENABLED !== "true") {
+    return new NextResponse(null, { status: 204 })
+  }
+
   const authHeader = req.headers.get("authorization")
   if (
     process.env.NODE_ENV === "production" &&

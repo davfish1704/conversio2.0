@@ -3,6 +3,10 @@ import { processNextBatch } from "@/lib/jobs/runner"
 
 // Called by Vercel Cron every minute. Also callable in dev via POST.
 export async function POST(req: NextRequest) {
+  if (process.env.CRON_ROUTES_ENABLED !== "true") {
+    return new NextResponse(null, { status: 204 })
+  }
+
   // Verify Vercel cron secret in production
   const authHeader = req.headers.get("authorization")
   if (

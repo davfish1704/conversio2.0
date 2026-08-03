@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
-import { notifyAdmin } from "@/lib/notifications/admin-notify"
-
-const STUCK_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24 Stunden
-const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000    // Nicht erneut benachrichtigen innerhalb von 6 Stunden
+import { checkStuckLeads } from "@/lib/jobs/check-stuck-leads"
 
 export async function GET(req: NextRequest) {
   return POST(req)
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.CRON_ROUTES_ENABLED !== "true") {
+    return new NextResponse(null, { status: 204 })
+  }
+
   const authHeader = req.headers.get("authorization")
   if (
     process.env.NODE_ENV === "production" &&
@@ -19,47 +19,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Processed Webhooks älter als 7 Tage bereinigen
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-  await prisma.processedWebhook.deleteMany({ where: { processedAt: { lt: sevenDaysAgo } } })
-
-  const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS)
-  const dedupeCutoff = new Date(Date.now() - DEDUPE_WINDOW_MS)
-
-  const stuckConversations = await prisma.conversation.findMany({
-    where: {
-      status: "ACTIVE",
-      aiEnabled: true,
-      frozen: false,
-      lastMessageAt: { lt: cutoff },
-    },
-    select: { id: true, boardId: true, leadId: true, lastMessageAt: true },
-    take: 50,
-  })
-
-  let notified = 0
-
-  for (const conv of stuckConversations) {
-    // Deduplizierung: überspringen wenn wir kürzlich über diesen Lead benachrichtigt haben
-    const recent = await prisma.adminNotification.findFirst({
-      where: {
-        level: "WARNING",
-        leadId: conv.leadId,
-        createdAt: { gt: dedupeCutoff },
-      },
-    })
-    if (recent) continue
-
-    await notifyAdmin({
-      level: "WARNING",
-      title: "Lead ohne Aktivität (>24h)",
-      message: `Conversation ${conv.id} hat seit ${conv.lastMessageAt?.toISOString() ?? "unbekannt"} keine Aktivität mehr. Letzte Aktivität: ${conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString("de-DE") : "—"}`,
-      boardId: conv.boardId ?? undefined,
-      leadId: conv.leadId ?? undefined,
-      metadata: { conversationId: conv.id, lastMessageAt: conv.lastMessageAt },
-    })
-    notified++
-  }
-
-  return NextResponse.json({ ok: true, checked: stuckConversations.length, notified })
+  const result = await checkStuckLeads()
+  return NextResponse.json({ ok: true, ...result })
 }
